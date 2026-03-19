@@ -21,6 +21,11 @@ pub fn enableRawMode() !void {
 
     raw.oflag.OPOST = false;
 
+    const min = @intFromEnum(std.posix.V.MIN);
+    const time = @intFromEnum(std.posix.V.TIME);
+    raw.cc[min] = 0;
+    raw.cc[time] = 1;
+
     try std.posix.tcsetattr(stdin, .FLUSH, raw);
 }
 
