@@ -1,5 +1,6 @@
 const std = @import("std");
 const buffer = @import("buffer/gap.zig");
+const terminal = @import("view/terminal.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -10,6 +11,8 @@ pub fn main() !void {
             std.posix.exit(42);
         }
     }
+
+    try terminal.enableRawMode();
 
     const allocator = gpa.allocator();
 
@@ -35,6 +38,8 @@ pub fn main() !void {
     buf.backspace();
     std.debug.print("backspace\n", .{});
     buf.printDebug();
+
+    defer terminal.disableRawMode();
 
     // std.debug.print("gap_buf.len: {d}\n", .{gap_buf.gap_end});
     // std.debug.print("{any}", .{gap_buf.buffer});
