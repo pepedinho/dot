@@ -52,7 +52,7 @@ pub const Editor = struct {
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
-                self.buf.insertChar('\n');
+                try self.buf.insertChar('\n');
                 self.needs_redraw = true;
             },
             .DeleteChar => {

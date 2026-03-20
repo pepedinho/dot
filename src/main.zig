@@ -3,6 +3,8 @@ const buffer = @import("buffer/gap.zig");
 const terminal = @import("view/terminal.zig");
 const keyboard = @import("view/keyboard.zig");
 const ui = @import("view/ui.zig");
+const Editor = @import("buffer/core.zig").Editor;
+const Action = @import("buffer/core.zig").Action;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -19,73 +21,62 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var buf = try buffer.GapBuffer.init(allocator);
-    defer buf.deinit();
-
     var stoudt_buf: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stoudt_buf);
     const stdout = &stdout_writer.interface;
-    try ui.refreshScreen(stdout, &buf);
-    try stdout.flush();
 
-    var need_full_redraw = false;
+    var dot = try Editor.init(allocator);
+    defer dot.deinit();
 
-    while (true) {
-        try stdout.flush();
-        const key = try keyboard.readKey();
-        switch (key) {
-            .none => continue, // Timeout, on boucle
-            .escape => {
-                // Pour l'instant, Echap quitte l'éditeur
-                break;
-            },
-            .left => {
-                buf.moveCursorLeft();
-                need_full_redraw = true;
-            },
-            .right => {
-                buf.moveCursorRight();
-                need_full_redraw = false;
-            },
-            .up => {
-                buf.moveCursorUp();
-                // TODO : Calculer l'index de la ligne du dessus
-            },
-            .down => {
-                buf.moveCursorDown();
-                // TODO : Calculer l'index de la ligne du dessous
-            },
-            .backspace => {
-                const pos = buf.getCursorPos();
-                if (pos.x == 1) {
-                    need_full_redraw = true;
-                } else {
-                    need_full_redraw = false;
-                }
-                buf.backspace();
-            },
-            .enter => {
-                try buf.insertChar('\n');
-                need_full_redraw = true;
-            },
-            .ascii => |c| {
-                try buf.insertChar(c);
-                need_full_redraw = false;
-            },
-        }
-
-        if (need_full_redraw) {
-            try ui.refreshScreen(stdout, &buf);
+    while (dot.is_running) {
+        if (dot.needs_redraw) {
+            try ui.refreshScreen(stdout, &dot.buf);
         } else {
-            try ui.updateCurrentLine(stdout, &buf);
+            try ui.updateCurrentLine(stdout, &dot.buf);
         }
+
         try stdout.flush();
+
+        const key = try keyboard.readKey();
+        // if (key == .none) continue;
+
+        var action: ?Action = null;
+        // std.debug.print("{any}", .{key});
+
+        switch (dot.mode) {
+            .Normal => {
+                switch (key) {
+                    .ascii => |c| {
+                        if (c == 'i') action = .{ .SetMode = .Insert };
+                        if (c == 'h') action = .MoveLeft;
+                        if (c == 'j') action = .MoveDown;
+                        if (c == 'k') action = .MoveUp;
+                        if (c == 'l') action = .MoveRight;
+                        if (c == 'x') action = .DeleteChar;
+                        if (c == 'q') action = .Quit;
+                    },
+                    else => {},
+                }
+            },
+            .Insert => {
+                switch (key) {
+                    .escape => action = .{ .SetMode = .Normal },
+                    .ascii => |c| action = .{ .InsertChar = c },
+                    .enter => action = .InsertNewLine,
+                    .backspace => action = .DeleteChar,
+                    .left => action = .MoveLeft,
+                    .right => action = .MoveRight,
+                    else => {},
+                }
+            },
+            .Command => {},
+        }
+
+        if (action) |a| {
+            try dot.execute(a);
+        }
     }
-
     try stdout.writeAll("\x1b[2J\x1b[H");
-
-    // std.debug.print("gap_buf.len: {d}\n", .{gap_buf.gap_end});
-    // std.debug.print("{any}", .{gap_buf.buffer});
 }
 
 //
