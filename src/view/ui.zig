@@ -8,22 +8,48 @@ pub fn refreshScreen(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
     const part1 = buf.getFirst();
     const part2 = buf.getSecond();
 
-    try stdout.writeAll(part1);
-    try stdout.writeAll(part2);
+    try writeWithCTRLF(stdout, part1);
+    try writeWithCTRLF(stdout, part2);
 
-    var cursor_x: usize = 1;
-    var cursor_y: usize = 1;
+    const pos = buf.getCursorPos();
 
-    for (part1) |c| {
+    try stdout.print("\x1b[{d};{d}H", .{ pos.y, pos.x });
+    try stdout.writeAll("\x1b[?25h");
+}
+
+fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
+    var start: usize = 0;
+
+    for (text, 0..) |c, i| {
         if (c == '\n') {
-            cursor_y += 1;
-            cursor_x = 1;
-        } else {
-            cursor_x += 1;
+            try stdout.writeAll(text[start..i]);
+            try stdout.writeAll("\r\n");
+            start = i + 1;
         }
     }
 
-    try stdout.print("\x1b[{d};{d}H", .{ cursor_y, cursor_x });
+    if (start < text.len) {
+        try stdout.writeAll(text[start..text.len]);
+    }
+}
 
-    try stdout.writeAll("\x1b[?25h");
+pub fn updateCurrentLine(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
+    const pos = buf.getCursorPos();
+    try stdout.writeAll("\x1b[?25l");
+    try stdout.print("\x1b[{d};1H\x1b[2K", .{pos.y});
+
+    var start_of_line = buf.gap_start;
+    while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
+        start_of_line -= 1;
+    }
+
+    try stdout.writeAll(buf.buffer[start_of_line..buf.gap_start]);
+
+    var end_of_line = buf.gap_end;
+    while (end_of_line < buf.buffer.len and buf.buffer[end_of_line] != '\n') {
+        end_of_line += 1;
+    }
+
+    try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
+    try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ pos.y, pos.x });
 }

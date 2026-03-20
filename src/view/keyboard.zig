@@ -39,7 +39,7 @@ pub fn readKey() !Key {
         return .escape;
     } else if (c == 127) {
         return .backspace;
-    } else if (c == '\n') {
+    } else if (c == '\r') {
         return .enter;
     } else {
         return .{ .ascii = c };

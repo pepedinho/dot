@@ -45,9 +45,12 @@ pub fn main() !void {
     var stoudt_buf: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stoudt_buf);
     const stdout = &stdout_writer.interface;
+    try ui.refreshScreen(stdout, &buf);
+    try stdout.flush();
+
+    var need_full_redraw = false;
 
     while (true) {
-        try ui.refreshScreen(stdout, &buf);
         try stdout.flush();
         const key = try keyboard.readKey();
         switch (key) {
@@ -56,20 +59,45 @@ pub fn main() !void {
                 // Pour l'instant, Echap quitte l'éditeur
                 break;
             },
-            .left => buf.moveCursorLeft(),
-            .right => buf.moveCursorRight(),
+            .left => {
+                buf.moveCursorLeft();
+                need_full_redraw = true;
+            },
+            .right => {
+                buf.moveCursorRight();
+                need_full_redraw = false;
+            },
             .up => {
                 // TODO : Calculer l'index de la ligne du dessus
             },
             .down => {
                 // TODO : Calculer l'index de la ligne du dessous
             },
-            .backspace => buf.backspace(),
-            .enter => try buf.insertChar('\n'),
+            .backspace => {
+                const pos = buf.getCursorPos();
+                if (pos.x == 1) {
+                    need_full_redraw = true;
+                } else {
+                    need_full_redraw = false;
+                }
+                buf.backspace();
+            },
+            .enter => {
+                try buf.insertChar('\n');
+                need_full_redraw = true;
+            },
             .ascii => |c| {
                 try buf.insertChar(c);
+                need_full_redraw = false;
             },
         }
+
+        if (need_full_redraw) {
+            try ui.refreshScreen(stdout, &buf);
+        } else {
+            try ui.updateCurrentLine(stdout, &buf);
+        }
+        try stdout.flush();
     }
 
     try stdout.writeAll("\x1b[2J\x1b[H");

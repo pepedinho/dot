@@ -85,4 +85,20 @@ pub const GapBuffer = struct {
     pub fn getSecond(self: *GapBuffer) []u8 {
         return self.buffer[self.gap_end..self.buffer.len];
     }
+
+    pub fn getCursorPos(self: *GapBuffer) struct { x: usize, y: usize } {
+        var x: usize = 1;
+        var y: usize = 1;
+
+        for (self.buffer[0..self.gap_start]) |c| {
+            if (c == '\n') {
+                y += 1;
+                x = 1;
+            } else {
+                x += 1;
+            }
+        }
+
+        return .{ .y = y, .x = x };
+    }
 };
