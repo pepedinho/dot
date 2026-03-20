@@ -68,9 +68,11 @@ pub fn main() !void {
                 need_full_redraw = false;
             },
             .up => {
+                buf.moveCursorUp();
                 // TODO : Calculer l'index de la ligne du dessus
             },
             .down => {
+                buf.moveCursorDown();
                 // TODO : Calculer l'index de la ligne du dessous
             },
             .backspace => {

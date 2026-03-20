@@ -54,6 +54,44 @@ pub const GapBuffer = struct {
         }
     }
 
+    pub fn moveCursorUp(self: *GapBuffer) void {
+        const pos = self.getCursorPos();
+        if (pos.y == 1) return;
+
+        while (self.gap_start > 0 and self.buffer[self.gap_start - 1] != '\n') {
+            self.moveCursorLeft();
+        }
+
+        self.moveCursorLeft();
+
+        while (self.gap_start > 0 and self.buffer[self.gap_start - 1] != '\n') {
+            self.moveCursorLeft();
+        }
+
+        var target_x = pos.x;
+        while (target_x > 1 and self.gap_end < self.buffer.len and self.buffer[self.gap_end] != '\n') {
+            self.moveCursorRight();
+            target_x -= 1;
+        }
+    }
+
+    pub fn moveCursorDown(self: *GapBuffer) void {
+        const pos = self.getCursorPos();
+
+        while (self.gap_end < self.buffer.len and self.buffer[self.gap_end] != '\n') {
+            self.moveCursorRight();
+        }
+
+        if (self.gap_end == self.buffer.len) return;
+
+        self.moveCursorRight();
+        var target_x = pos.x;
+        while (target_x > 1 and self.gap_end < self.buffer.len and self.buffer[self.gap_end] != '\n') {
+            self.moveCursorRight();
+            target_x -= 1;
+        }
+    }
+
     pub fn insertChar(self: *GapBuffer, char: u8) !void {
         if (self.gap_start == self.gap_end) {
             try self.expand();
