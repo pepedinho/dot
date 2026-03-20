@@ -1,20 +1,25 @@
 const std = @import("std");
 const buffer = @import("../buffer/gap.zig");
+const Editor = @import("../buffer/core.zig").Editor;
 
-pub fn refreshScreen(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
+const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
+
+pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll("\x1b[?25l");
     try stdout.writeAll("\x1b[2J\x1b[H");
 
-    const part1 = buf.getFirst();
-    const part2 = buf.getSecond();
+    const part1 = editor.buf.getFirst();
+    const part2 = editor.buf.getSecond();
 
     try writeWithCTRLF(stdout, part1);
     try writeWithCTRLF(stdout, part2);
 
-    const pos = buf.getCursorPos();
+    const pos = editor.buf.getCursorPos();
 
     try stdout.print("\x1b[{d};{d}H", .{ pos.y, pos.x });
-    try stdout.writeAll("\x1b[?25h");
+
+    try displayMode(stdout, editor);
+    try stdout.writeAll("\x1b[?25h"); // display cursor
 }
 
 fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
@@ -52,4 +57,13 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
 
     try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
     try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ pos.y, pos.x });
+}
+
+pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
+    const last_pos = editor.buf.getCursorPos();
+    const win = editor.win;
+
+    try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
+    try stdout.print("\x1b[7m {s} \x1b[m", .{MODE[@intFromEnum(editor.mode)]});
+    try stdout.print("\x1b[{d};{d}H", .{ last_pos.y, last_pos.x });
 }

@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const TAB_SIZE: usize = 8;
+
 pub const GapBuffer = struct {
     allocator: std.mem.Allocator,
     buffer: []u8,
@@ -132,6 +134,8 @@ pub const GapBuffer = struct {
             if (c == '\n') {
                 y += 1;
                 x = 1;
+            } else if (c == '\t') {
+                x += TAB_SIZE;
             } else {
                 x += 1;
             }
