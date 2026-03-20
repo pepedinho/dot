@@ -77,4 +77,12 @@ pub const GapBuffer = struct {
             self.gap_end,
         });
     }
+
+    pub fn getFirst(self: *GapBuffer) []u8 {
+        return self.buffer[0..self.gap_start];
+    }
+
+    pub fn getSecond(self: *GapBuffer) []u8 {
+        return self.buffer[self.gap_end..self.buffer.len];
+    }
 };
