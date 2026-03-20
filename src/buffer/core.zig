@@ -18,6 +18,35 @@ pub const Action = union(enum) {
     SetMode: Mode,
     Quit,
 };
+const builtin = @import("builtin");
+
+const TIOCGWINSZ = if (builtin.os.tag == .macos) 0x40087468 else 0x5413;
+
+pub const Window = struct {
+    rows: u16,
+    cols: u16,
+
+    pub fn init() !Window {
+        var win = Window{ .rows = 0, .cols = 0 };
+        try win.updateSize();
+        return win;
+    }
+
+    pub fn updateSize(self: *Window) !void {
+        var ws = std.posix.system.winsize{
+            .row = 0,
+            .col = 0,
+            .xpixel = 0,
+            .ypixel = 0,
+        };
+
+        const err = std.posix.system.ioctl(std.posix.STDOUT_FILENO, TIOCGWINSZ, @intFromPtr(&ws));
+        if (err == -1) return error.IoctlError;
+
+        self.cols = ws.col;
+        self.rows = ws.row;
+    }
+};
 
 pub const Editor = struct {
     allocator: std.mem.Allocator,
@@ -25,6 +54,7 @@ pub const Editor = struct {
     mode: Mode,
     is_running: bool,
     needs_redraw: bool,
+    win: Window,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         return Editor{
@@ -33,6 +63,7 @@ pub const Editor = struct {
             .mode = .Normal,
             .is_running = true,
             .needs_redraw = true,
+            .win = try Window.init(),
         };
     }
 

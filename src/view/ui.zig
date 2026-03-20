@@ -1,5 +1,6 @@
 const std = @import("std");
 const buffer = @import("../buffer/gap.zig");
+const Editor = @import("../buffer/core.zig").Editor;
 
 pub fn refreshScreen(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
     try stdout.writeAll("\x1b[?25l");
@@ -53,3 +54,7 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
     try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
     try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ pos.y, pos.x });
 }
+
+// pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
+
+// }
