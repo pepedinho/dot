@@ -3,6 +3,7 @@ const buffer = @import("../buffer/gap.zig");
 const Editor = @import("../buffer/core.zig").Editor;
 
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
+const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
 
 pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll("\x1b[?25l");
@@ -64,6 +65,7 @@ pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
     const win = editor.win;
 
     try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
-    try stdout.print("\x1b[7m {s} \x1b[m", .{MODE[@intFromEnum(editor.mode)]});
+    const mode = @intFromEnum(editor.mode);
+    try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
     try stdout.print("\x1b[{d};{d}H", .{ last_pos.y, last_pos.x });
 }
