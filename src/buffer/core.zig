@@ -16,6 +16,8 @@ pub const Action = union(enum) {
     MoveUp,
     MoveDown,
     SetMode: Mode,
+    Append,
+    AppendNewLine,
     Quit,
 };
 const builtin = @import("builtin");
@@ -105,6 +107,16 @@ pub const Editor = struct {
             .MoveUp => {
                 self.buf.moveCursorUp();
                 self.needs_redraw = false;
+            },
+            .Append => {
+                self.buf.moveCursorRight();
+                self.mode = .Insert;
+                self.needs_redraw = true;
+            },
+            .AppendNewLine => {
+                self.buf.moveCursorDown();
+                self.mode = .Insert;
+                self.needs_redraw = true;
             },
         }
     }

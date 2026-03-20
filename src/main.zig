@@ -52,9 +52,15 @@ pub fn main() !void {
                         if (c == 'j') action = .MoveDown;
                         if (c == 'k') action = .MoveUp;
                         if (c == 'l') action = .MoveRight;
+                        if (c == 'a') action = .Append;
+                        if (c == 'o') action = .AppendNewLine;
                         if (c == 'x') action = .DeleteChar;
                         if (c == 'q') action = .Quit;
                     },
+                    .left => action = .MoveLeft,
+                    .right => action = .MoveRight,
+                    .down => action = .MoveDown,
+                    .up => action = .MoveUp,
                     else => {},
                 }
             },
@@ -66,6 +72,8 @@ pub fn main() !void {
                     .backspace => action = .DeleteChar,
                     .left => action = .MoveLeft,
                     .right => action = .MoveRight,
+                    .up => action = .MoveUp,
+                    .down => action = .MoveDown,
                     else => {},
                 }
             },
