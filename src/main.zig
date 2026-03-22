@@ -77,7 +77,9 @@ pub fn main() !void {
                     else => {},
                 }
             },
-            .Command => {},
+            .Command => {
+                action = .CreatePop 
+            },
         }
 
         if (action) |a| {
