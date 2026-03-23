@@ -3,8 +3,10 @@ const buffer = @import("buffer/gap.zig");
 const terminal = @import("view/terminal.zig");
 const keyboard = @import("view/keyboard.zig");
 const ui = @import("view/ui.zig");
+const utils = @import("utils.zig");
 const Editor = @import("buffer/core.zig").Editor;
 const Action = @import("buffer/core.zig").Action;
+const PopBuilder = @import("buffer/core.zig").PopBuilder;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -35,6 +37,8 @@ pub fn main() !void {
             try ui.updateCurrentLine(stdout, &dot.buf);
         }
 
+        try dot.renderAllPopup(stdout);
+
         try stdout.flush();
 
         const key = try keyboard.readKey();
@@ -56,6 +60,7 @@ pub fn main() !void {
                         if (c == 'o') action = .AppendNewLine;
                         if (c == 'x') action = .DeleteChar;
                         if (c == 'q') action = .Quit;
+                        if (c == ':') action = .{ .SetMode = .Command };
                     },
                     .left => action = .MoveLeft,
                     .right => action = .MoveRight,
@@ -78,7 +83,23 @@ pub fn main() !void {
                 }
             },
             .Command => {
-                action = .CreatePop 
+                switch (key) {
+                    .escape => action = .{ .SetMode = .Normal },
+                    .ascii => |c| {
+                        if (c == 'p') {
+                            const size = dot.win;
+                            const text = "test";
+                            const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
+                            const pop = PopBuilder{
+                                .pos = pos,
+                                .size = .{ .x = 20, .y = 5 },
+                                .text = text,
+                            };
+                            action = .{ .CreatePop = pop };
+                        }
+                    },
+                    else => {},
+                }
             },
         }
 

@@ -3,7 +3,7 @@ const utils = @import("../utils.zig");
 const Editor = @import("../buffer/core.zig").Editor;
 
 //This struct represent a `pop` windows.
-const Pop = struct {
+pub const Pop = struct {
     id: u32,
     allocator: std.mem.Allocator,
     pos: utils.Pos,
@@ -42,7 +42,7 @@ pub fn render(stdout: *std.Io.Writer, pop: *const Pop) !void {
     const h = pop.size.y;
 
     try stdout.print("\x1b[{d};{d}H┌", .{ y, x });
-    for (0..w - 2) |_| stdout.writeAll("─");
+    for (0..w - 2) |_| try stdout.writeAll("─");
     try stdout.writeAll("┐");
 
     for (1..h - 1) |i| {

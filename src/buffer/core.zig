@@ -78,11 +78,18 @@ pub const Editor = struct {
             .is_running = true,
             .needs_redraw = true,
             .win = try Window.init(),
+            .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
         };
     }
 
     pub fn deinit(self: *Editor) void {
         self.buf.deinit();
+
+        var it = self.pop_store.valueIterator();
+        while (it.next()) |v| {
+            v.deinit();
+        }
+        self.pop_store.deinit();
     }
 
     pub fn execute(self: *Editor, action: Action) !void {
@@ -131,10 +138,12 @@ pub const Editor = struct {
                 self.needs_redraw = true;
             },
             .CreatePop => |b| {
+                std.debug.print("create pop: {any}", .{b});
                 const pop_id = try self.createPop(b.pos, b.size);
-                if (self.pop_store.get(pop_id)) |popup| {
-                    popup.write(b.text);
+                if (self.pop_store.getPtr(pop_id)) |popup| {
+                    try popup.write(b.text);
                 }
+                self.needs_redraw = true;
             },
         }
     }
@@ -155,7 +164,10 @@ pub const Editor = struct {
         }
     }
 
-    pub fn renderAllPopup(out: *std.Io.Writer, self: *Editor) !void {
+    pub fn renderAllPopup(
+        self: *Editor,
+        out: *std.Io.Writer,
+    ) !void {
         var it = self.pop_store.valueIterator();
         while (it.next()) |entry| {
             try pop.render(out, entry);
