@@ -47,60 +47,65 @@ pub fn main() !void {
         var action: ?Action = null;
         // std.debug.print("{any}", .{key});
 
-        switch (dot.mode) {
-            .Normal => {
-                switch (key) {
-                    .ascii => |c| {
-                        if (c == 'i') action = .{ .SetMode = .Insert };
-                        if (c == 'h') action = .MoveLeft;
-                        if (c == 'j') action = .MoveDown;
-                        if (c == 'k') action = .MoveUp;
-                        if (c == 'l') action = .MoveRight;
-                        if (c == 'a') action = .Append;
-                        if (c == 'o') action = .AppendNewLine;
-                        if (c == 'x') action = .DeleteChar;
-                        if (c == 'q') action = .Quit;
-                        if (c == ':') action = .{ .SetMode = .Command };
-                    },
-                    .left => action = .MoveLeft,
-                    .right => action = .MoveRight,
-                    .down => action = .MoveDown,
-                    .up => action = .MoveUp,
-                    else => {},
-                }
-            },
-            .Insert => {
-                switch (key) {
-                    .escape => action = .{ .SetMode = .Normal },
-                    .ascii => |c| action = .{ .InsertChar = c },
-                    .enter => action = .InsertNewLine,
-                    .backspace => action = .DeleteChar,
-                    .left => action = .MoveLeft,
-                    .right => action = .MoveRight,
-                    .up => action = .MoveUp,
-                    .down => action = .MoveDown,
-                    else => {},
-                }
-            },
-            .Command => {
-                switch (key) {
-                    .escape => action = .{ .SetMode = .Normal },
-                    .ascii => |c| {
-                        if (c == 'p') {
-                            const size = dot.win;
-                            const text = "test";
-                            const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
-                            const pop = PopBuilder{
-                                .pos = pos,
-                                .size = .{ .x = 20, .y = 5 },
-                                .text = text,
-                            };
-                            action = .{ .CreatePop = pop };
-                        }
-                    },
-                    else => {},
-                }
-            },
+        if (key == .none) {
+            action = .Tick;
+        } else {
+            switch (dot.mode) {
+                .Normal => {
+                    switch (key) {
+                        .ascii => |c| {
+                            if (c == 'i') action = .{ .SetMode = .Insert };
+                            if (c == 'h') action = .MoveLeft;
+                            if (c == 'j') action = .MoveDown;
+                            if (c == 'k') action = .MoveUp;
+                            if (c == 'l') action = .MoveRight;
+                            if (c == 'a') action = .Append;
+                            if (c == 'o') action = .AppendNewLine;
+                            if (c == 'x') action = .DeleteChar;
+                            if (c == 'q') action = .Quit;
+                            if (c == ':') action = .{ .SetMode = .Command };
+                        },
+                        .left => action = .MoveLeft,
+                        .right => action = .MoveRight,
+                        .down => action = .MoveDown,
+                        .up => action = .MoveUp,
+                        else => {},
+                    }
+                },
+                .Insert => {
+                    switch (key) {
+                        .escape => action = .{ .SetMode = .Normal },
+                        .ascii => |c| action = .{ .InsertChar = c },
+                        .enter => action = .InsertNewLine,
+                        .backspace => action = .DeleteChar,
+                        .left => action = .MoveLeft,
+                        .right => action = .MoveRight,
+                        .up => action = .MoveUp,
+                        .down => action = .MoveDown,
+                        else => {},
+                    }
+                },
+                .Command => {
+                    switch (key) {
+                        .escape => action = .{ .SetMode = .Normal },
+                        .ascii => |c| {
+                            if (c == 'p') {
+                                const size = dot.win;
+                                const text = "test";
+                                const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
+                                const pop = PopBuilder{
+                                    .pos = pos,
+                                    .size = .{ .x = 20, .y = 5 },
+                                    .text = text,
+                                    .duration_ms = 2000,
+                                };
+                                action = .{ .CreatePop = pop };
+                            }
+                        },
+                        else => {},
+                    }
+                },
+            }
         }
 
         if (action) |a| {

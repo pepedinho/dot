@@ -13,6 +13,7 @@ pub const PopBuilder = struct {
     size: utils.Pos,
     pos: utils.Pos,
     text: []const u8,
+    duration_ms: ?i64,
 };
 
 pub const Action = union(enum) {
@@ -28,6 +29,7 @@ pub const Action = union(enum) {
     AppendNewLine,
     CreatePop: PopBuilder,
     Quit,
+    Tick,
 };
 
 const builtin = @import("builtin");
@@ -94,6 +96,25 @@ pub const Editor = struct {
 
     pub fn execute(self: *Editor, action: Action) !void {
         switch (action) {
+            .Tick => {
+                const now = std.time.milliTimestamp();
+                var it = self.pop_store.iterator();
+                var to_remove: std.ArrayList(u32) = .empty;
+                defer to_remove.deinit(self.allocator);
+
+                while (it.next()) |entry| {
+                    if (entry.value_ptr.expire_at) |expiration| {
+                        if (now >= expiration) {
+                            try to_remove.append(self.allocator, entry.key_ptr.*);
+                        }
+                    }
+                }
+
+                for (to_remove.items) |id| {
+                    self.destroyPop(id);
+                    self.needs_redraw = true;
+                }
+            },
             .SetMode => |m| {
                 self.mode = m;
                 self.needs_redraw = true;
@@ -138,8 +159,7 @@ pub const Editor = struct {
                 self.needs_redraw = true;
             },
             .CreatePop => |b| {
-                std.debug.print("create pop: {any}", .{b});
-                const pop_id = try self.createPop(b.pos, b.size);
+                const pop_id = try self.createPop(b.pos, b.size, b.duration_ms);
                 if (self.pop_store.getPtr(pop_id)) |popup| {
                     try popup.write(b.text);
                 }
@@ -148,10 +168,10 @@ pub const Editor = struct {
         }
     }
 
-    pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos) !u32 {
+    pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) !u32 {
         const id = self.next_popup_id;
         self.next_popup_id += 1;
-        const popup = pop.Pop.init(self.allocator, id, pos, size);
+        const popup = pop.Pop.init(self.allocator, id, pos, size, duration_ms);
         try self.pop_store.put(id, popup);
 
         return id;
@@ -168,9 +188,11 @@ pub const Editor = struct {
         self: *Editor,
         out: *std.Io.Writer,
     ) !void {
+        const cursor_pos = self.buf.getCursorPos();
         var it = self.pop_store.valueIterator();
         while (it.next()) |entry| {
             try pop.render(out, entry);
         }
+        try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
     }
 };

@@ -10,15 +10,19 @@ pub const Pop = struct {
     size: utils.Pos,
     buffer: std.ArrayList(u8),
     border_color: []const u8 = "\x1b[37m",
+    expire_at: ?i64,
 
-    pub fn init(allocator: std.mem.Allocator, id: u32, pos: utils.Pos, size: utils.Pos) Pop {
+    pub fn init(allocator: std.mem.Allocator, id: u32, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) Pop {
         const buffer: std.ArrayList(u8) = .empty;
+        const expires = if (duration_ms) |ms| std.time.milliTimestamp() + ms else null;
+
         return .{
             .allocator = allocator,
             .id = id,
             .pos = pos,
             .size = size,
             .buffer = buffer,
+            .expire_at = expires,
         };
     }
 
@@ -41,6 +45,7 @@ pub fn render(stdout: *std.Io.Writer, pop: *const Pop) !void {
     const w = pop.size.x;
     const h = pop.size.y;
 
+    try stdout.writeAll("\x1b[?25l");
     try stdout.print("\x1b[{d};{d}H┌", .{ y, x });
     for (0..w - 2) |_| try stdout.writeAll("─");
     try stdout.writeAll("┐");
@@ -65,6 +70,7 @@ pub fn render(stdout: *std.Io.Writer, pop: *const Pop) !void {
         try stdout.print("\x1b[{d};{d}H{s}", .{ y + row_offset, x + 1, line[0..display_len] });
         row_offset += 1;
     }
+    try stdout.writeAll("\x1b[?25h"); // display cursor
 }
 
 //This function display a pop window of size `size` at pos `pos`
