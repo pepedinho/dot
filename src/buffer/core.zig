@@ -35,7 +35,7 @@ pub const Window = struct {
     }
 
     pub fn updateSize(self: *Window) !void {
-        var ws = std.posix.system.winsize{
+        var ws = std.posix.winsize{
             .row = 0,
             .col = 0,
             .xpixel = 0,
