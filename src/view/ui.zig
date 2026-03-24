@@ -29,7 +29,7 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll("\x1b[?25h"); // display cursor
 }
 
-fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
+pub fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
     var start: usize = 0;
 
     for (text, 0..) |c, i| {

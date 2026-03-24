@@ -7,6 +7,7 @@ const utils = @import("utils.zig");
 const Editor = @import("buffer/core.zig").Editor;
 const Action = @import("buffer/core.zig").Action;
 const PopBuilder = @import("buffer/core.zig").PopBuilder;
+const Fs = @import("fs/filesystem.zig").Fs;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -36,6 +37,10 @@ pub fn main() !void {
     _ = args.next();
     if (args.next()) |filename| {
         dot.loadFile(filename);
+        dot.buf.deinit();
+        const file_content = try Fs.loadFast(dot.allocator, filename);
+        defer allocator.free(file_content);
+        dot.buf = try buffer.GapBuffer.initFromFile(allocator, file_content);
     }
 
     while (dot.is_running) {
