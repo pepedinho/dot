@@ -83,7 +83,22 @@ pub fn insertLine(stdout: *std.Io.Writer, text: []const u8, row: usize) !void {
 }
 
 pub fn commandPrompt(stdout: *std.Io.Writer, editor: *Editor) !void {
-    try stdout.writeAll("\x1b[?25h"); // display cursor
-    try stdout.print("\x1b[{d};1H\x1b[2K", .{editor.win.rows - 1});
-    try stdout.print(":{s}\x1b[m", .{editor.cmd_buf.items});
+    const row = editor.win.rows;
+    const text = editor.cmd_buf.items;
+    const cols = editor.win.cols;
+
+    try stdout.print("\x1b[{d};1H\x1b[48;5;237m", .{row});
+
+    try stdout.print(":{s}", .{text});
+
+    const used_cols = text.len + 1;
+    if (cols > used_cols) {
+        for (0..cols - used_cols) |_| {
+            try stdout.writeByte(' ');
+        }
+    }
+
+    try stdout.writeAll("\x1b[m");
+
+    try stdout.print("\x1b[{d};{d}H", .{ row, used_cols + 1 });
 }
