@@ -3,6 +3,9 @@ const utils = @import("../utils.zig");
 const Editor = @import("../buffer/core.zig").Editor;
 
 //This struct represent a `pop` windows.
+//This will be used for popup notification,
+//Pop can have a lifetime or can be killed mannually
+//So it can be used for non ephemeral messages to
 pub const Pop = struct {
     id: u32,
     allocator: std.mem.Allocator,
