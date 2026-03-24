@@ -1,6 +1,7 @@
 const std = @import("std");
 const buffer = @import("../buffer/gap.zig");
 const Editor = @import("../buffer/core.zig").Editor;
+const utils = @import("../utils.zig");
 
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
