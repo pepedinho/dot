@@ -28,6 +28,10 @@ pub const Action = union(enum) {
     Append,
     AppendNewLine,
     CreatePop: PopBuilder,
+    CommandChar: u8,
+    CommandBackspace,
+    ExecuteCommand,
+    ClearCommandBuf,
     Quit,
     Tick,
 };
@@ -69,6 +73,8 @@ pub const Editor = struct {
     is_running: bool,
     needs_redraw: bool,
     win: Window,
+    cmd_buf: std.ArrayListUnmanaged(u8),
+    filename: ?[]const u8,
     pop_store: std.AutoHashMap(u32, pop.Pop),
     next_popup_id: u32 = 1,
 
@@ -80,6 +86,8 @@ pub const Editor = struct {
             .is_running = true,
             .needs_redraw = true,
             .win = try Window.init(),
+            .cmd_buf = .empty,
+            .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
         };
     }
@@ -92,6 +100,15 @@ pub const Editor = struct {
             v.deinit();
         }
         self.pop_store.deinit();
+        self.cmd_buf.deinit(self.allocator);
+    }
+
+    pub fn loadFile(self: *Editor, filename: []const u8) void {
+        self.filename = filename;
+    }
+
+    pub fn quit(self: *Editor) void {
+        self.is_running = false;
     }
 
     pub fn execute(self: *Editor, action: Action) !void {
@@ -116,10 +133,13 @@ pub const Editor = struct {
                 }
             },
             .SetMode => |m| {
+                if (self.mode == .Command) {
+                    self.cmd_buf.clearRetainingCapacity();
+                }
                 self.mode = m;
                 self.needs_redraw = true;
             },
-            .Quit => self.is_running = false,
+            .Quit => self.quit(),
             .InsertChar => |c| {
                 try self.buf.insertChar(c);
                 self.needs_redraw = false;
@@ -165,6 +185,26 @@ pub const Editor = struct {
                 }
                 self.needs_redraw = true;
             },
+            .CommandChar => |c| {
+                try self.cmd_buf.append(self.allocator, c);
+                self.needs_redraw = true;
+            },
+            .CommandBackspace => {
+                _ = self.cmd_buf.pop();
+                self.needs_redraw = true;
+            },
+            .ExecuteCommand => {
+                self.executeCmd();
+            },
+            .ClearCommandBuf => {
+                self.cmd_buf.clearRetainingCapacity();
+            },
+        }
+    }
+
+    fn executeCmd(self: *Editor) void {
+        if (std.mem.eql(u8, self.cmd_buf.items, "q")) {
+            self.quit();
         }
     }
 
@@ -188,11 +228,11 @@ pub const Editor = struct {
         self: *Editor,
         out: *std.Io.Writer,
     ) !void {
-        const cursor_pos = self.buf.getCursorPos();
+        // const cursor_pos = self.buf.getCursorPos();
         var it = self.pop_store.valueIterator();
         while (it.next()) |entry| {
             try pop.render(out, entry);
         }
-        try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
+        // try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
     }
 };
