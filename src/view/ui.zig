@@ -21,6 +21,11 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.print("\x1b[{d};{d}H", .{ pos.y, pos.x });
 
     try displayMode(stdout, editor);
+    if (editor.mode == .Command) {
+        // try stdout.print(":{s}", .{editor.cmd_buf.items});
+        // try insertLine(stdout, editor.cmd_buf.items, editor.win.rows - 2);
+        try commandPrompt(stdout, editor);
+    }
     try stdout.writeAll("\x1b[?25h"); // display cursor
 }
 
@@ -69,4 +74,31 @@ pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
     const mode = @intFromEnum(editor.mode);
     try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
     try stdout.print("\x1b[{d};{d}H", .{ last_pos.y, last_pos.x });
+}
+
+pub fn insertLine(stdout: *std.Io.Writer, text: []const u8, row: usize) !void {
+    try stdout.writeAll("\x1b[?25h"); // display cursor
+    try stdout.print("\x1b[{d};1H\x1b[2K", .{row});
+    try stdout.print("{s}\x1b[m", .{text});
+}
+
+pub fn commandPrompt(stdout: *std.Io.Writer, editor: *Editor) !void {
+    const row = editor.win.rows;
+    const text = editor.cmd_buf.items;
+    const cols = editor.win.cols;
+
+    try stdout.print("\x1b[{d};1H\x1b[48;5;237m", .{row});
+
+    try stdout.print(":{s}", .{text});
+
+    const used_cols = text.len + 1;
+    if (cols > used_cols) {
+        for (0..cols - used_cols) |_| {
+            try stdout.writeByte(' ');
+        }
+    }
+
+    try stdout.writeAll("\x1b[m");
+
+    try stdout.print("\x1b[{d};{d}H", .{ row, used_cols + 1 });
 }

@@ -26,9 +26,17 @@ pub fn main() !void {
     var stoudt_buf: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stoudt_buf);
     const stdout = &stdout_writer.interface;
+    try terminal.openAlternateScreen(stdout);
 
     var dot = try Editor.init(allocator);
     defer dot.deinit();
+
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+    _ = args.next();
+    if (args.next()) |filename| {
+        dot.loadFile(filename);
+    }
 
     while (dot.is_running) {
         if (dot.needs_redraw) {
@@ -89,19 +97,22 @@ pub fn main() !void {
                     switch (key) {
                         .escape => action = .{ .SetMode = .Normal },
                         .ascii => |c| {
-                            if (c == 'p') {
-                                const size = dot.win;
-                                const text = "test";
-                                const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
-                                const pop = PopBuilder{
-                                    .pos = pos,
-                                    .size = .{ .x = 20, .y = 5 },
-                                    .text = text,
-                                    .duration_ms = 2000,
-                                };
-                                action = .{ .CreatePop = pop };
-                            }
+                            // if (c == 'p') {
+                            //     const size = dot.win;
+                            //     const text = "test";
+                            //     const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
+                            //     const pop = PopBuilder{
+                            //         .pos = pos,
+                            //         .size = .{ .x = 20, .y = 5 },
+                            //         .text = text,
+                            //         .duration_ms = 2000,
+                            //     };
+                            //     action = .{ .CreatePop = pop };
+                            // }
+                            action = .{ .CommandChar = c };
                         },
+                        .backspace => action = .CommandBackspace,
+                        .enter => action = .ExecuteCommand,
                         else => {},
                     }
                 },
@@ -113,5 +124,6 @@ pub fn main() !void {
         }
         try dot.win.updateSize();
     }
-    try stdout.writeAll("\x1b[2J\x1b[H");
+    try terminal.closeAlternateScreen(stdout);
+    // try stdout.writeAll("\x1b[H\x1b[2J\x1b[3J");
 }

@@ -33,3 +33,13 @@ pub fn disableRawMode() void {
     const stdin = std.posix.STDIN_FILENO;
     std.posix.tcsetattr(stdin, .FLUSH, original_termios) catch return;
 }
+
+pub fn openAlternateScreen(stdout: *std.Io.Writer) !void {
+    try stdout.writeAll("\x1b[?1049h");
+    try stdout.flush();
+}
+
+pub fn closeAlternateScreen(stdout: *std.Io.Writer) !void {
+    try stdout.writeAll("\x1b[?1049l");
+    try stdout.flush();
+}
