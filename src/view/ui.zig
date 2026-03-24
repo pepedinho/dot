@@ -67,5 +67,10 @@ pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
     const mode = @intFromEnum(editor.mode);
     try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
+
+    if (editor.mode == .Command) {
+        try stdout.print(":{s}", .{editor.cmd_buf.items});
+    }
+
     try stdout.print("\x1b[{d};{d}H", .{ last_pos.y, last_pos.x });
 }

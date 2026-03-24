@@ -28,6 +28,15 @@ pub fn main() !void {
     var dot = try Editor.init(allocator);
     defer dot.deinit();
 
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+    _ = args.next(); // skip executable name
+    if (args.next()) |filename| {
+        dot.loadFile(filename) catch |err| {
+            if (err != error.FileNotFound) return err;
+        };
+    }
+
     while (dot.is_running) {
         if (dot.needs_redraw) {
             try ui.refreshScreen(stdout, &dot);
@@ -56,6 +65,7 @@ pub fn main() !void {
                         if (c == 'o') action = .AppendNewLine;
                         if (c == 'x') action = .DeleteChar;
                         if (c == 'q') action = .Quit;
+                        if (c == ':') action = .{ .SetMode = .Command };
                     },
                     .left => action = .MoveLeft,
                     .right => action = .MoveRight,
@@ -77,7 +87,18 @@ pub fn main() !void {
                     else => {},
                 }
             },
-            .Command => {},
+            .Command => {
+                switch (key) {
+                    .escape => {
+                        dot.cmd_buf.clearRetainingCapacity();
+                        action = .{ .SetMode = .Normal };
+                    },
+                    .enter => action = .ExecuteCommand,
+                    .backspace => action = .CommandBackspace,
+                    .ascii => |c| action = .{ .CommandChar = c },
+                    else => {},
+                }
+            },
         }
 
         if (action) |a| {
