@@ -45,9 +45,11 @@ pub fn main() !void {
 
     while (dot.is_running) {
         if (dot.needs_redraw) {
+            dot.scroll();
             try ui.refreshScreen(stdout, &dot);
         } else {
-            try ui.updateCurrentLine(stdout, &dot.buf);
+            dot.scroll();
+            try ui.updateCurrentLine(stdout, &dot);
         }
 
         try dot.renderAllPopup(stdout);

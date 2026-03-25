@@ -13,20 +13,55 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     const part1 = editor.buf.getFirst();
     const part2 = editor.buf.getSecond();
 
-    try writeWithCTRLF(stdout, part1);
-    try writeWithCTRLF(stdout, part2);
+    var current_row: usize = 1;
+    var current_col: usize = 1;
+    var screen_row: usize = 1;
+    const max_rows = editor.win.rows - 1;
+    const parts = [_][]const u8{ part1, part2 };
+    for (parts) |part| {
+        for (part) |c| {
+            if (screen_row > max_rows) break;
 
-    const pos = editor.buf.getCursorPos();
-
-    try stdout.print("\x1b[{d};{d}H", .{ pos.y, pos.x });
+            if (c == '\n') {
+                if (current_row > editor.row_offset) {
+                    try stdout.writeAll("\r\n");
+                    screen_row += 1;
+                }
+                current_row += 1;
+                current_col = 1;
+            } else if (c == '\t') {
+                const TAB_SIZE = 8;
+                for (0..TAB_SIZE) |_| {
+                    if (current_row > editor.row_offset) {
+                        if (current_col > editor.col_offset and current_col <= editor.col_offset + editor.win.cols) {
+                            try stdout.writeAll(" ");
+                        }
+                    }
+                    current_col += 1;
+                }
+            } else {
+                if (current_row > editor.row_offset) {
+                    if (current_col > editor.col_offset and current_col <= editor.col_offset + editor.win.cols) {
+                        try stdout.writeAll(&[_]u8{c});
+                    }
+                }
+                current_col += 1;
+            }
+        }
+    }
 
     try displayMode(stdout, editor);
     if (editor.mode == .Command) {
-        // try stdout.print(":{s}", .{editor.cmd_buf.items});
-        // try insertLine(stdout, editor.cmd_buf.items, editor.win.rows - 2);
         try commandPrompt(stdout, editor);
+    } else {
+        const pos = editor.buf.getCursorPos();
+
+        const screen_y = pos.y - editor.row_offset;
+        const screen_x = pos.x - editor.col_offset;
+
+        try stdout.print("\x1b[{d};{d}H", .{ screen_y, screen_x });
     }
-    try stdout.writeAll("\x1b[?25h"); // display cursor
+    try stdout.writeAll("\x1b[?25h");
 }
 
 fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
@@ -45,10 +80,15 @@ fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
     }
 }
 
-pub fn updateCurrentLine(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
+pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
+    const buf = &editor.buf;
     const pos = buf.getCursorPos();
+
+    const screen_y = pos.y - editor.row_offset;
+    const screen_x = pos.x - editor.col_offset;
+
     try stdout.writeAll("\x1b[?25l");
-    try stdout.print("\x1b[{d};1H\x1b[2K", .{pos.y});
+    try stdout.print("\x1b[{d};1H\x1b[2K", .{screen_y});
 
     var start_of_line = buf.gap_start;
     while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
@@ -63,7 +103,7 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, buf: *buffer.GapBuffer) !void {
     }
 
     try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
-    try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ pos.y, pos.x });
+    try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ screen_y, screen_x });
 }
 
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
