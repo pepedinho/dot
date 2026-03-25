@@ -227,7 +227,7 @@ pub const Editor = struct {
             // if (self.pop_store.getPtr(pop_id)) |p| {
             //     try p.write(popup.text);
             // }
-            self.needs_redraw = true;
+            //self.needs_redraw = true;
         } else if (std.mem.eql(u8, self.cmd_buf.items, "wq")) {
             try self.saveFile();
             self.quit();
