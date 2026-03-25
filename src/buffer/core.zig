@@ -84,6 +84,7 @@ pub const Editor = struct {
     filename: ?[]const u8,
     pop_store: std.AutoHashMap(u32, pop.Pop),
     next_popup_id: u32 = 1,
+    // key_binds: std.AutoHashMap([]u8, Action),
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         return Editor{
@@ -229,7 +230,7 @@ pub const Editor = struct {
             // if (self.pop_store.getPtr(pop_id)) |p| {
             //     try p.write(popup.text);
             // }
-            //self.needs_redraw = true;
+            // self.needs_redraw = true;
         } else if (std.mem.eql(u8, self.cmd_buf.items, "wq")) {
             try self.saveFile();
             self.quit();
@@ -259,12 +260,12 @@ pub const Editor = struct {
         self: *Editor,
         out: *std.Io.Writer,
     ) !void {
-        // const cursor_pos = self.buf.getCursorPos();
+        const cursor_pos = self.buf.getCursorPos();
         var it = self.pop_store.valueIterator();
         while (it.next()) |entry| {
             try pop.render(out, entry);
         }
-        // try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
+        try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
     }
 
     pub fn saveFile(self: *Editor) !void {
@@ -280,22 +281,29 @@ pub const Editor = struct {
         try file.writeAll(self.buf.getSecond());
     }
 
-    pub fn scroll(self: *Editor) void {
+    pub fn scroll(self: *Editor) bool {
+        var camera_moved = false;
         const pos = self.buf.getCursorPos();
 
         if (pos.y <= self.row_offset) {
             self.row_offset = pos.y - 1;
+            camera_moved = true;
         }
 
         if (pos.y >= self.row_offset + self.win.rows) {
             self.row_offset = pos.y - self.win.rows + 1;
+            camera_moved = true;
         }
 
         if (pos.x <= self.col_offset) {
             self.col_offset = pos.x - 1;
+            camera_moved = true;
         }
         if (pos.x >= self.col_offset + self.win.cols) {
             self.col_offset = pos.x - self.win.cols + 1;
+            camera_moved = true;
         }
+
+        return camera_moved;
     }
 };

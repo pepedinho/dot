@@ -44,11 +44,13 @@ pub fn main() !void {
     }
 
     while (dot.is_running) {
+        if (dot.scroll()) {
+            dot.needs_redraw = true;
+        }
+
         if (dot.needs_redraw) {
-            dot.scroll();
             try ui.refreshScreen(stdout, &dot);
         } else {
-            dot.scroll();
             try ui.updateCurrentLine(stdout, &dot);
         }
 
