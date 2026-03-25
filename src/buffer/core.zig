@@ -77,6 +77,8 @@ pub const Editor = struct {
     last_mode: Mode,
     is_running: bool,
     needs_redraw: bool,
+    row_offset: usize = 0,
+    col_offset: usize = 0,
     win: Window,
     cmd_buf: std.ArrayListUnmanaged(u8),
     filename: ?[]const u8,
@@ -161,19 +163,19 @@ pub const Editor = struct {
             },
             .MoveLeft => {
                 self.buf.moveCursorLeft();
-                self.needs_redraw = false;
+                self.needs_redraw = true;
             },
             .MoveRight => {
                 self.buf.moveCursorRight();
-                self.needs_redraw = false;
+                self.needs_redraw = true;
             },
             .MoveDown => {
                 self.buf.moveCursorDown();
-                self.needs_redraw = false;
+                self.needs_redraw = true;
             },
             .MoveUp => {
                 self.buf.moveCursorUp();
-                self.needs_redraw = false;
+                self.needs_redraw = true;
             },
             .Append => {
                 self.buf.moveCursorRight();
@@ -276,5 +278,24 @@ pub const Editor = struct {
 
         try file.writeAll(self.buf.getFirst());
         try file.writeAll(self.buf.getSecond());
+    }
+
+    pub fn scroll(self: *Editor) void {
+        const pos = self.buf.getCursorPos();
+
+        if (pos.y <= self.row_offset) {
+            self.row_offset = pos.y - 1;
+        }
+
+        if (pos.y >= self.row_offset + self.win.rows) {
+            self.row_offset = pos.y - self.win.rows + 1;
+        }
+
+        if (pos.x <= self.col_offset) {
+            self.col_offset = pos.x - 1;
+        }
+        if (pos.x >= self.col_offset + self.win.cols) {
+            self.col_offset = pos.x - self.win.cols + 1;
+        }
     }
 };
