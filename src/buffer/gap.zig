@@ -21,6 +21,21 @@ pub const GapBuffer = struct {
         };
     }
 
+    pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8) !GapBuffer {
+        const total_capacity = text.len + INITIAL_CAPACITY;
+        const buf = try allocator.alloc(u8, total_capacity);
+
+        @memcpy(buf[0..text.len], text);
+        @memset(buf[text.len..total_capacity], 0);
+
+        return GapBuffer{
+            .allocator = allocator,
+            .buffer = buf,
+            .gap_start = text.len,
+            .gap_end = total_capacity,
+        };
+    }
+
     fn expand(self: *GapBuffer) !void {
         const new_capacity = self.buffer.len * 2;
         const buf = try self.allocator.alloc(u8, new_capacity);

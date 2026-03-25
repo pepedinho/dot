@@ -3,6 +3,10 @@ const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
 
+pub const CoreError = error{
+    NoFileName,
+};
+
 pub const Mode = enum {
     Normal,
     Insert,
@@ -70,6 +74,7 @@ pub const Editor = struct {
     allocator: std.mem.Allocator,
     buf: buffer.GapBuffer,
     mode: Mode,
+    last_mode: Mode,
     is_running: bool,
     needs_redraw: bool,
     win: Window,
@@ -83,6 +88,7 @@ pub const Editor = struct {
             .allocator = allocator,
             .buf = try buffer.GapBuffer.init(allocator),
             .mode = .Normal,
+            .last_mode = .Normal,
             .is_running = true,
             .needs_redraw = true,
             .win = try Window.init(),
@@ -133,6 +139,7 @@ pub const Editor = struct {
                 }
             },
             .SetMode => |m| {
+                self.last_mode = self.mode;
                 if (self.mode == .Command) {
                     self.cmd_buf.clearRetainingCapacity();
                 }
@@ -194,7 +201,7 @@ pub const Editor = struct {
                 self.needs_redraw = true;
             },
             .ExecuteCommand => {
-                self.executeCmd();
+                try self.executeCmd();
             },
             .ClearCommandBuf => {
                 self.cmd_buf.clearRetainingCapacity();
@@ -202,10 +209,32 @@ pub const Editor = struct {
         }
     }
 
-    fn executeCmd(self: *Editor) void {
+    fn executeCmd(self: *Editor) !void {
         if (std.mem.eql(u8, self.cmd_buf.items, "q")) {
             self.quit();
+        } else if (std.mem.eql(u8, self.cmd_buf.items, "w")) {
+            try self.saveFile();
+            // const size = self.win;
+            // const text = "test";
+            // const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
+            // const popup = PopBuilder{
+            //     .pos = pos,
+            //     .size = .{ .x = text.len + 3, .y = 3 },
+            //     .text = text,
+            //     .duration_ms = 2000,
+            // };
+            // const pop_id = try self.createPop(popup.pos, popup.size, popup.duration_ms);
+            // if (self.pop_store.getPtr(pop_id)) |p| {
+            //     try p.write(popup.text);
+            // }
+            //self.needs_redraw = true;
+        } else if (std.mem.eql(u8, self.cmd_buf.items, "wq")) {
+            try self.saveFile();
+            self.quit();
         }
+
+        self.mode = self.last_mode;
+        self.cmd_buf.clearRetainingCapacity();
     }
 
     pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) !u32 {
@@ -234,5 +263,18 @@ pub const Editor = struct {
             try pop.render(out, entry);
         }
         // try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
+    }
+
+    pub fn saveFile(self: *Editor) !void {
+        const name = self.filename orelse return error.NoFileName;
+
+        const file = if (std.fs.path.isAbsolute(name))
+            try std.fs.createFileAbsolute(name, .{})
+        else
+            try std.fs.cwd().createFile(name, .{});
+        defer file.close();
+
+        try file.writeAll(self.buf.getFirst());
+        try file.writeAll(self.buf.getSecond());
     }
 };
