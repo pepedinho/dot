@@ -51,6 +51,7 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     }
 
     try displayMode(stdout, editor);
+    try editor.renderAllPopup(stdout);
     if (editor.mode == .Command) {
         try commandPrompt(stdout, editor);
     } else {

@@ -66,11 +66,15 @@ pub fn render(stdout: *std.Io.Writer, pop: *const Pop) !void {
     var lines = std.mem.splitScalar(u8, pop.buffer.items, '\n');
     var row_offset: usize = 1;
 
+    const inner_w = w - 2;
     while (lines.next()) |line| {
         if (row_offset >= h - 1) break;
 
         const display_len = @min(line.len, w - 2);
-        try stdout.print("\x1b[{d};{d}H{s}", .{ y + row_offset, x + 1, line[0..display_len] });
+        const left_padding = (inner_w - display_len) / 2;
+        const start_x = x + 1 + left_padding;
+
+        try stdout.print("\x1b[{d};{d}H{s}", .{ y + row_offset, start_x, line[0..display_len] });
         row_offset += 1;
     }
     try stdout.writeAll("\x1b[?25h"); // display cursor
