@@ -6,5 +6,5 @@ pub fn isDigitSlice(s: []const u8) bool {
         if (!std.ascii.isDigit(c))
             return false;
     }
-    return true;
+    return s.len > 0;
 }

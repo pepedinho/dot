@@ -184,7 +184,7 @@ pub const GapBuffer = struct {
                 current_x = 1;
                 if (current_y > pos.y) break;
             } else if (c == '\t') {
-                current_x = TAB_SIZE;
+                current_x += TAB_SIZE;
             } else {
                 current_x += 1;
             }

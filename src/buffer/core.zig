@@ -248,7 +248,7 @@ pub const Editor = struct {
         } else if (std.mem.eql(u8, self.cmd_buf.items, "top")) {
             self.buf.jumpTo(.{ .x = 1, .y = 1 });
         } else if (utils.isDigitSlice(self.cmd_buf.items)) {
-            const l = try std.fmt.parseInt(u8, self.cmd_buf.items, 10);
+            const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
             self.buf.jumpTo(.{ .x = 1, .y = l });
         }
 
