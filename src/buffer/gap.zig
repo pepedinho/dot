@@ -1,4 +1,5 @@
 const std = @import("std");
+const utils = @import("../utils.zig");
 
 const TAB_SIZE: usize = 8;
 
@@ -157,5 +158,52 @@ pub const GapBuffer = struct {
         }
 
         return .{ .y = y, .x = x };
+    }
+
+    pub fn jumpTo(self: *GapBuffer, pos: utils.Pos) void {
+        const gap_size = self.gap_end - self.gap_start;
+        const logical_len = self.buffer.len - gap_size;
+
+        var target_logical_idx: usize = 0;
+        var current_y: usize = 1;
+        var current_x: usize = 1;
+
+        while (target_logical_idx < logical_len) {
+            if (current_y == pos.y and current_x >= pos.x) break;
+
+            const physical_idx = if (target_logical_idx < self.gap_start)
+                target_logical_idx
+            else
+                target_logical_idx + gap_size;
+
+            const c = self.buffer[physical_idx];
+            if (current_y == pos.y and c == '\n') break;
+
+            if (c == '\n') {
+                current_y += 1;
+                current_x = 1;
+                if (current_y > pos.y) break;
+            } else if (c == '\t') {
+                current_x += TAB_SIZE;
+            } else {
+                current_x += 1;
+            }
+
+            target_logical_idx += 1;
+        }
+
+        if (target_logical_idx < self.gap_start) {
+            const shift_len = self.gap_start - target_logical_idx;
+            const dest = self.gap_end - shift_len;
+
+            std.mem.copyBackwards(u8, self.buffer[dest .. dest + shift_len], self.buffer[target_logical_idx..self.gap_start]);
+            self.gap_start -= shift_len;
+            self.gap_end -= shift_len;
+        } else if (target_logical_idx > self.gap_start) {
+            const shift_len = target_logical_idx - self.gap_start;
+            std.mem.copyForwards(u8, self.buffer[self.gap_start .. self.gap_start + shift_len], self.buffer[self.gap_end .. self.gap_end + shift_len]);
+            self.gap_start += shift_len;
+            self.gap_end += shift_len;
+        }
     }
 };
