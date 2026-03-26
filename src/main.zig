@@ -31,6 +31,7 @@ pub fn main() !void {
 
     var dot = try Editor.init(allocator);
     defer dot.deinit();
+    try dot.loadStandardKeyBinds();
 
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
@@ -75,16 +76,9 @@ pub fn main() !void {
                 .Normal => {
                     switch (key) {
                         .ascii => |c| {
-                            if (c == 'i') action = .{ .SetMode = .Insert };
-                            if (c == 'h') action = .MoveLeft;
-                            if (c == 'j') action = .MoveDown;
-                            if (c == 'k') action = .MoveUp;
-                            if (c == 'l') action = .MoveRight;
-                            if (c == 'a') action = .Append;
-                            if (c == 'o') action = .AppendNewLine;
-                            if (c == 'x') action = .DeleteChar;
-                            if (c == 'q') action = .Quit;
-                            if (c == ':') action = .{ .SetMode = .Command };
+                            if (dot.key_binds.get(c)) |a| {
+                                action = a;
+                            }
                         },
                         .left => action = .MoveLeft,
                         .right => action = .MoveRight,
