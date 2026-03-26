@@ -1,4 +1,3 @@
-const std = @import("std");
 const Editor = @import("core.zig").Editor;
 
 pub fn loadStandardKeyBinds(editor: *Editor) !void {

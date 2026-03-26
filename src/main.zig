@@ -30,8 +30,8 @@ pub fn main() !void {
     try terminal.openAlternateScreen(stdout);
 
     var dot = try Editor.init(allocator);
-    try dot.loadStandardKeyBinds();
     defer dot.deinit();
+    try dot.loadStandardKeyBinds();
 
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
