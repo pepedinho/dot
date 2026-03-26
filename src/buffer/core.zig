@@ -2,6 +2,7 @@ const std = @import("std");
 const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
+const keybinds = @import("keybinds.zig");
 
 pub const CoreError = error{
     NoFileName,
@@ -84,6 +85,7 @@ pub const Editor = struct {
     filename: ?[]const u8,
     pop_store: std.AutoHashMap(u32, pop.Pop),
     next_popup_id: u32 = 1,
+    key_binds: std.AutoHashMap(u8, Action),
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         return Editor{
@@ -97,7 +99,12 @@ pub const Editor = struct {
             .cmd_buf = .empty,
             .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
+            .key_binds = std.AutoHashMap(u8, Action).init(allocator),
         };
+    }
+
+    pub fn loadStandardKeyBinds(self: *Editor) !void {
+        try keybinds.loadStandardKeyBinds(self);
     }
 
     pub fn deinit(self: *Editor) void {
@@ -108,6 +115,7 @@ pub const Editor = struct {
             v.deinit();
         }
         self.pop_store.deinit();
+        self.key_binds.deinit();
         self.cmd_buf.deinit(self.allocator);
     }
 
@@ -117,6 +125,10 @@ pub const Editor = struct {
 
     pub fn quit(self: *Editor) void {
         self.is_running = false;
+    }
+
+    pub fn registerKeyBind(self: *Editor, key: u8, action: Action) !void {
+        try self.key_binds.put(key, action);
     }
 
     pub fn execute(self: *Editor, action: Action) !void {
