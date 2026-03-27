@@ -253,7 +253,7 @@ pub const Editor = struct {
             },
             .DeleteChar => {
                 self.buf.backspace();
-                self.needs_redraw = true;
+                self.needs_redraw = false;
             },
             .MoveLeft => {
                 self.buf.moveCursorLeft();
@@ -296,6 +296,7 @@ pub const Editor = struct {
             },
             .ExecuteCommand => {
                 try self.executeCmd();
+                self.needs_redraw = true;
             },
             .ClearCommandBuf => {
                 self.cmd_buf.clearRetainingCapacity();

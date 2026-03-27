@@ -60,6 +60,8 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
         }
     }
 
+    try stdout.writeAll(clear_to_eol);
+    screen_row += 1;
     while (screen_row <= max_rows) : (screen_row += 1) {
         try ansi.goto(stdout, screen_row, view.x);
         try stdout.writeAll(clear_to_eol);
@@ -108,25 +110,49 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     const buf = &editor.buf;
     const pos = buf.getCursorPos();
 
-    const screen_y = pos.y - editor.active_view.row_offset;
-    const screen_x = pos.x - editor.active_view.col_offset;
+    const screen_y = editor.active_view.y + pos.y - editor.active_view.row_offset - 1;
+    const screen_x = editor.active_view.x + pos.x - editor.active_view.col_offset - 1;
 
     try stdout.writeAll(ansi.hide_cursor);
-    try ansi.goto(stdout, screen_y, 1);
+    try ansi.goto(stdout, screen_y, editor.active_view.x);
 
     var start_of_line = buf.gap_start;
     while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
         start_of_line -= 1;
     }
 
-    try stdout.writeAll(buf.buffer[start_of_line..buf.gap_start]);
+    // try stdout.writeAll(buf.buffer[start_of_line..buf.gap_start]);
 
     var end_of_line = buf.gap_end;
     while (end_of_line < buf.buffer.len and buf.buffer[end_of_line] != '\n') {
         end_of_line += 1;
     }
 
-    try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
+    var current_col: usize = 1;
+    const parts = [_][]const u8{ buf.buffer[start_of_line..buf.gap_start], buf.buffer[buf.gap_end..end_of_line] };
+
+    for (parts) |part| {
+        for (part) |c| {
+            if (c == '\t') {
+                const TAB_SIZE = 8;
+                for (0..TAB_SIZE) |_| {
+                    if (current_col > editor.active_view.col_offset and current_col <= editor.active_view.col_offset + editor.active_view.width) {
+                        try stdout.writeAll(" ");
+                    }
+                    current_col += 1;
+                }
+            } else {
+                if (current_col > editor.active_view.col_offset and current_col <= editor.active_view.col_offset + editor.active_view.width) {
+                    try stdout.writeAll(&[_]u8{c});
+                }
+                current_col += 1;
+            }
+        }
+    }
+
+    // try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
+
+    try stdout.writeAll("\x1b[K");
 
     // Z-Index for pop box
     var it = editor.pop_store.valueIterator();
