@@ -223,37 +223,52 @@ pub const Editor = struct {
         }
     }
 
+    pub fn registerPop(self: *Editor, pos: ?utils.Pos, size: ?utils.Pos, text: []const u8, duration: ?u32) !void {
+        const w_s = self.win;
+        const popup = PopBuilder{
+            .pos = pos orelse .{ .x = w_s.cols / 2, .y = w_s.rows / 2 },
+            .size = size orelse .{ .x = text.len + 4, .y = 3 },
+            .text = text,
+            .duration_ms = duration orelse 2000,
+        };
+        const pop_id = try self.createPop(popup.pos, popup.size, popup.duration_ms);
+        if (self.pop_store.getPtr(pop_id)) |p| {
+            try p.write(popup.text);
+        }
+        self.needs_redraw = true;
+    }
+
     fn executeCmd(self: *Editor) !void {
-        if (std.mem.eql(u8, self.cmd_buf.items, "q")) {
+        defer {
+            self.mode = self.last_mode;
+            self.cmd_buf.clearRetainingCapacity();
+        }
+
+        const input = std.mem.trim(u8, self.cmd_buf.items, " \t");
+        if (input.len == 0) return;
+
+        const space_index = std.mem.indexOfScalar(u8, input, ' ');
+
+        const cmd = if (space_index) |idx| self.cmd_buf.items[0..idx] else input;
+        const args = if (space_index) |idx| std.mem.trim(u8, input[idx..], " \t") else "";
+
+        if (std.mem.eql(u8, cmd, "q")) {
             self.quit();
-        } else if (std.mem.eql(u8, self.cmd_buf.items, "w")) {
+        } else if (std.mem.eql(u8, cmd, "w")) {
             try self.saveFile();
-            // const size = self.win;
-            // const text = "test";
-            // const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
-            // const popup = PopBuilder{
-            //     .pos = pos,
-            //     .size = .{ .x = text.len + 3, .y = 3 },
-            //     .text = text,
-            //     .duration_ms = 2000,
-            // };
-            // const pop_id = try self.createPop(popup.pos, popup.size, popup.duration_ms);
-            // if (self.pop_store.getPtr(pop_id)) |p| {
-            //     try p.write(popup.text);
-            // }
-            //self.needs_redraw = true;
-        } else if (std.mem.eql(u8, self.cmd_buf.items, "wq")) {
+            if (self.filename) |filename|
+                try self.registerPop(null, null, filename, null);
+        } else if (std.mem.eql(u8, cmd, "wq")) {
             try self.saveFile();
             self.quit();
-        } else if (std.mem.eql(u8, self.cmd_buf.items, "top")) {
+        } else if (std.mem.eql(u8, cmd, "top")) {
             self.buf.jumpTo(.{ .x = 1, .y = 1 });
-        } else if (utils.isDigitSlice(self.cmd_buf.items)) {
+        } else if (std.mem.eql(u8, cmd, "file")) {
+            self.loadFile(args);
+        } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
             self.buf.jumpTo(.{ .x = 1, .y = l });
         }
-
-        self.mode = self.last_mode;
-        self.cmd_buf.clearRetainingCapacity();
     }
 
     pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) !u32 {
@@ -285,7 +300,9 @@ pub const Editor = struct {
     }
 
     pub fn saveFile(self: *Editor) !void {
-        const name = self.filename orelse return error.NoFileName;
+        const name = self.filename orelse {
+            return try self.registerPop(null, null, "No file name", 3000);
+        };
 
         const file = if (std.fs.path.isAbsolute(name))
             try std.fs.createFileAbsolute(name, .{})

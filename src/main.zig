@@ -59,7 +59,7 @@ pub fn main() !void {
             try ui.updateCurrentLine(stdout, &dot);
         }
 
-        try dot.renderAllPopup(stdout);
+        // try dot.renderAllPopup(stdout);
 
         try stdout.flush();
 
@@ -104,18 +104,6 @@ pub fn main() !void {
                     switch (key) {
                         .escape => action = .{ .SetMode = .Normal },
                         .ascii => |c| {
-                            // if (c == 'p') {
-                            //     const size = dot.win;
-                            //     const text = "test";
-                            //     const pos = utils.Pos{ .x = size.cols / 2, .y = size.rows / 2 };
-                            //     const pop = PopBuilder{
-                            //         .pos = pos,
-                            //         .size = .{ .x = 20, .y = 5 },
-                            //         .text = text,
-                            //         .duration_ms = 2000,
-                            //     };
-                            //     action = .{ .CreatePop = pop };
-                            // }
                             action = .{ .CommandChar = c };
                         },
                         .backspace => action = .CommandBackspace,
