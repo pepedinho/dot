@@ -5,6 +5,7 @@ const utils = @import("../utils.zig");
 const keybinds = @import("keybinds.zig");
 const ui = @import("../view/ui.zig");
 const keyboard = @import("../view/keyboard.zig");
+const pane = @import("pane.zig");
 
 pub const CoreError = error{
     NoFileName,
@@ -136,13 +137,12 @@ pub const Scheduler = struct {
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buf: buffer.GapBuffer,
+    active_view: pane.View,
     mode: Mode,
     last_mode: Mode,
     is_running: bool,
     needs_redraw: bool,
     is_dirty: bool = true,
-    row_offset: usize = 0,
-    col_offset: usize = 0,
     win: Window,
     cmd_buf: std.ArrayListUnmanaged(u8),
     filename: ?[]const u8,
@@ -165,6 +165,15 @@ pub const Editor = struct {
             .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
+            .active_view = undefined,
+        };
+
+        ed.active_view = pane.View{
+            .x = 1,
+            .y = 1,
+            .width = ed.win.cols,
+            .height = if (ed.win.rows > 0) ed.win.rows - 1 else 0,
+            .buf = &ed.buf,
         };
 
         try ed.scheduler.add(.Tick, 33);
@@ -384,37 +393,37 @@ pub const Editor = struct {
         try file.writeAll(self.buf.getFirst());
         try file.writeAll(self.buf.getSecond());
     }
-
-    pub fn scroll(self: *Editor) bool {
-        var camera_moved = false;
-        const pos = self.buf.getCursorPos();
-
-        if (pos.y <= self.row_offset) {
-            self.row_offset = pos.y - 1;
-            camera_moved = true;
-        }
-
-        if (pos.y >= self.row_offset + self.win.rows) {
-            self.row_offset = pos.y - self.win.rows + 1;
-            camera_moved = true;
-        }
-
-        if (pos.x <= self.col_offset) {
-            self.col_offset = pos.x - 1;
-            camera_moved = true;
-        }
-        if (pos.x >= self.col_offset + self.win.cols) {
-            self.col_offset = pos.x - self.win.cols + 1;
-            camera_moved = true;
-        }
-
-        return camera_moved;
-    }
+    //
+    // pub fn scroll(self: *Editor) bool {
+    //     var camera_moved = false;
+    //     const pos = self.buf.getCursorPos();
+    //
+    //     if (pos.y <= self.row_offset) {
+    //         self.row_offset = pos.y - 1;
+    //         camera_moved = true;
+    //     }
+    //
+    //     if (pos.y >= self.row_offset + self.win.rows) {
+    //         self.row_offset = pos.y - self.win.rows + 1;
+    //         camera_moved = true;
+    //     }
+    //
+    //     if (pos.x <= self.col_offset) {
+    //         self.col_offset = pos.x - 1;
+    //         camera_moved = true;
+    //     }
+    //     if (pos.x >= self.col_offset + self.win.cols) {
+    //         self.col_offset = pos.x - self.win.cols + 1;
+    //         camera_moved = true;
+    //     }
+    //
+    //     return camera_moved;
+    // }
 
     pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
         while (self.is_running) {
             if (self.is_dirty) {
-                if (self.scroll()) {
+                if (self.active_view.scroll()) {
                     self.needs_redraw = true;
                 }
 
