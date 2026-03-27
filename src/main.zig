@@ -66,14 +66,13 @@ pub fn main() !void {
         try stdout.flush();
 
         const key = try keyboard.readKey();
+        try dot.scheduler.update(&dot.action_queue);
         // if (key == .none) continue;
 
         // var action: ?Action = null;
         // std.debug.print("{any}", .{key});
 
-        if (key == .none) {
-            try dot.pushAction(.Tick);
-        } else {
+        if (key != .none) {
             switch (dot.mode) {
                 .Normal => {
                     switch (key) {
@@ -120,6 +119,7 @@ pub fn main() !void {
             try dot.execute(act);
         }
         try dot.win.updateSize();
+        std.Thread.sleep(16_000_000);
     }
     try terminal.closeAlternateScreen(stdout);
     // try stdout.writeAll("\x1b[H\x1b[2J\x1b[3J");
