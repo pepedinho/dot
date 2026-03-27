@@ -94,6 +94,43 @@ pub const ActionQueue = struct {
     }
 };
 
+pub const Job = struct {
+    action: Action,
+    interval_ms: i64,
+    last_run: i64,
+};
+
+pub const Scheduler = struct {
+    jobs: [32]?Job = .{null} ** 32,
+
+    pub fn add(self: *Scheduler, action: Action, interval_ms: i64) !void {
+        const now = std.time.milliTimestamp();
+        for (&self.jobs) |*slot| {
+            if (slot.* == null) {
+                slot.* = .{
+                    .action = action,
+                    .interval_ms = interval_ms,
+                    .last_run = now,
+                };
+                return;
+            }
+        }
+        return error.SchedulerFull;
+    }
+
+    pub fn update(self: *Scheduler, queue: *ActionQueue) !void {
+        const now = std.time.milliTimestamp();
+        for (&self.jobs) |*slot| {
+            if (slot.*) |*job| {
+                if (now - job.last_run >= job.interval_ms) {
+                    try queue.push(job.action);
+                    job.last_run = now;
+                }
+            }
+        }
+    }
+};
+
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buf: buffer.GapBuffer,
@@ -101,6 +138,7 @@ pub const Editor = struct {
     last_mode: Mode,
     is_running: bool,
     needs_redraw: bool,
+    is_dirty: bool = true,
     row_offset: usize = 0,
     col_offset: usize = 0,
     win: Window,
@@ -110,9 +148,10 @@ pub const Editor = struct {
     next_popup_id: u32 = 1,
     key_binds: std.AutoHashMap(u8, Action),
     action_queue: ActionQueue = .{},
+    scheduler: Scheduler = .{},
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
-        return Editor{
+        var ed = Editor{
             .allocator = allocator,
             .buf = try buffer.GapBuffer.init(allocator),
             .mode = .Normal,
@@ -125,6 +164,9 @@ pub const Editor = struct {
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
         };
+
+        try ed.scheduler.add(.Tick, 33);
+        return ed;
     }
 
     pub fn loadStandardKeyBinds(self: *Editor) !void {
@@ -178,6 +220,7 @@ pub const Editor = struct {
                 for (to_remove.items) |id| {
                     self.destroyPop(id);
                     self.needs_redraw = true;
+                    self.is_dirty = true;
                 }
             },
             .SetMode => |m| {

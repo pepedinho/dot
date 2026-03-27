@@ -51,29 +51,27 @@ pub fn main() !void {
     }
 
     while (dot.is_running) {
-        if (dot.scroll()) {
-            dot.needs_redraw = true;
-        }
+        if (dot.is_dirty) {
+            if (dot.scroll()) {
+                dot.needs_redraw = true;
+            }
 
-        if (dot.needs_redraw) {
-            try ui.refreshScreen(stdout, &dot);
-        } else {
-            try ui.updateCurrentLine(stdout, &dot);
+            if (dot.needs_redraw) {
+                try ui.refreshScreen(stdout, &dot);
+                dot.needs_redraw = false;
+            } else {
+                try ui.updateCurrentLine(stdout, &dot);
+            }
+            dot.is_dirty = false;
         }
-
-        // try dot.renderAllPopup(stdout);
 
         try stdout.flush();
 
         const key = try keyboard.readKey();
-        // if (key == .none) continue;
+        try dot.scheduler.update(&dot.action_queue);
 
-        // var action: ?Action = null;
-        // std.debug.print("{any}", .{key});
-
-        if (key == .none) {
-            try dot.pushAction(.Tick);
-        } else {
+        if (key != .none) {
+            dot.is_dirty = true;
             switch (dot.mode) {
                 .Normal => {
                     switch (key) {
@@ -120,7 +118,7 @@ pub fn main() !void {
             try dot.execute(act);
         }
         try dot.win.updateSize();
+        std.Thread.sleep(16_000_000);
     }
     try terminal.closeAlternateScreen(stdout);
-    // try stdout.writeAll("\x1b[H\x1b[2J\x1b[3J");
 }
