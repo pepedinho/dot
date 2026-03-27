@@ -222,6 +222,7 @@ pub const Editor = struct {
                 for (to_remove.items) |id| {
                     self.destroyPop(id);
                     self.needs_redraw = true;
+                    self.is_dirty = true;
                 }
             },
             .SetMode => |m| {
