@@ -6,6 +6,7 @@ const keybinds = @import("keybinds.zig");
 
 pub const CoreError = error{
     NoFileName,
+    QueueFull,
 };
 
 pub const Mode = enum {
@@ -71,6 +72,28 @@ pub const Window = struct {
     }
 };
 
+pub const ActionQueue = struct {
+    buffer: [256]Action = undefined,
+    head: usize = 0,
+    tail: usize = 0,
+
+    pub fn push(self: *ActionQueue, action: Action) CoreError!void {
+        const next_head = (self.head + 1) % self.buffer.len;
+        if (next_head == self.tail)
+            return CoreError.QueueFull;
+        self.buffer[self.head] = action;
+        self.head = next_head;
+    }
+
+    pub fn pop(self: *ActionQueue) ?Action {
+        if (self.head == self.tail) return null; // empty queue
+
+        const action = self.buffer[self.tail];
+        self.tail = (self.tail + 1) % self.buffer.len;
+        return action;
+    }
+};
+
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buf: buffer.GapBuffer,
@@ -86,6 +109,7 @@ pub const Editor = struct {
     pop_store: std.AutoHashMap(u32, pop.Pop),
     next_popup_id: u32 = 1,
     key_binds: std.AutoHashMap(u8, Action),
+    action_queue: ActionQueue = .{},
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         return Editor{
@@ -117,6 +141,10 @@ pub const Editor = struct {
         self.pop_store.deinit();
         self.key_binds.deinit();
         self.cmd_buf.deinit(self.allocator);
+    }
+
+    pub fn pushAction(self: *Editor, action: Action) !void {
+        try self.action_queue.push(action);
     }
 
     pub fn loadFile(self: *Editor, filename: []const u8) void {
@@ -175,29 +203,27 @@ pub const Editor = struct {
             },
             .MoveLeft => {
                 self.buf.moveCursorLeft();
-                self.needs_redraw = true;
+                self.needs_redraw = false;
             },
             .MoveRight => {
                 self.buf.moveCursorRight();
-                self.needs_redraw = true;
+                self.needs_redraw = false;
             },
             .MoveDown => {
                 self.buf.moveCursorDown();
-                self.needs_redraw = true;
+                self.needs_redraw = false;
             },
             .MoveUp => {
                 self.buf.moveCursorUp();
-                self.needs_redraw = true;
+                self.needs_redraw = false;
             },
             .Append => {
-                self.buf.moveCursorRight();
-                self.mode = .Insert;
-                self.needs_redraw = true;
+                try self.pushAction(.MoveRight);
+                try self.pushAction(.{ .SetMode = .Insert });
             },
             .AppendNewLine => {
-                self.buf.moveCursorDown();
-                self.mode = .Insert;
-                self.needs_redraw = true;
+                try self.pushAction(.MoveDown);
+                try self.pushAction(.{ .SetMode = .Insert });
             },
             .CreatePop => |b| {
                 const pop_id = try self.createPop(b.pos, b.size, b.duration_ms);
@@ -314,22 +340,29 @@ pub const Editor = struct {
         try file.writeAll(self.buf.getSecond());
     }
 
-    pub fn scroll(self: *Editor) void {
+    pub fn scroll(self: *Editor) bool {
+        var camera_moved = false;
         const pos = self.buf.getCursorPos();
 
         if (pos.y <= self.row_offset) {
             self.row_offset = pos.y - 1;
+            camera_moved = true;
         }
 
         if (pos.y >= self.row_offset + self.win.rows) {
             self.row_offset = pos.y - self.win.rows + 1;
+            camera_moved = true;
         }
 
         if (pos.x <= self.col_offset) {
             self.col_offset = pos.x - 1;
+            camera_moved = true;
         }
         if (pos.x >= self.col_offset + self.win.cols) {
             self.col_offset = pos.x - self.win.cols + 1;
+            camera_moved = true;
         }
+
+        return camera_moved;
     }
 };

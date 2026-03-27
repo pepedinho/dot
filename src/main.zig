@@ -51,11 +51,13 @@ pub fn main() !void {
     }
 
     while (dot.is_running) {
+        if (dot.scroll()) {
+            dot.needs_redraw = true;
+        }
+
         if (dot.needs_redraw) {
-            dot.scroll();
             try ui.refreshScreen(stdout, &dot);
         } else {
-            dot.scroll();
             try ui.updateCurrentLine(stdout, &dot);
         }
 
@@ -66,56 +68,56 @@ pub fn main() !void {
         const key = try keyboard.readKey();
         // if (key == .none) continue;
 
-        var action: ?Action = null;
+        // var action: ?Action = null;
         // std.debug.print("{any}", .{key});
 
         if (key == .none) {
-            action = .Tick;
+            try dot.pushAction(.Tick);
         } else {
             switch (dot.mode) {
                 .Normal => {
                     switch (key) {
                         .ascii => |c| {
                             if (dot.key_binds.get(c)) |a| {
-                                action = a;
+                                try dot.pushAction(a);
                             }
                         },
-                        .left => action = .MoveLeft,
-                        .right => action = .MoveRight,
-                        .down => action = .MoveDown,
-                        .up => action = .MoveUp,
+                        .left => try dot.pushAction(.MoveLeft),
+                        .right => try dot.pushAction(.MoveRight),
+                        .down => try dot.pushAction(.MoveDown),
+                        .up => try dot.pushAction(.MoveUp),
                         else => {},
                     }
                 },
                 .Insert => {
                     switch (key) {
-                        .escape => action = .{ .SetMode = .Normal },
-                        .ascii => |c| action = .{ .InsertChar = c },
-                        .enter => action = .InsertNewLine,
-                        .backspace => action = .DeleteChar,
-                        .left => action = .MoveLeft,
-                        .right => action = .MoveRight,
-                        .up => action = .MoveUp,
-                        .down => action = .MoveDown,
+                        .escape => try dot.pushAction(.{ .SetMode = .Normal }),
+                        .ascii => |c| try dot.pushAction(.{ .InsertChar = c }),
+                        .enter => try dot.pushAction(.InsertNewLine),
+                        .backspace => try dot.pushAction(.DeleteChar),
+                        .left => try dot.pushAction(.MoveLeft),
+                        .right => try dot.pushAction(.MoveRight),
+                        .up => try dot.pushAction(.MoveUp),
+                        .down => try dot.pushAction(.MoveDown),
                         else => {},
                     }
                 },
                 .Command => {
                     switch (key) {
-                        .escape => action = .{ .SetMode = .Normal },
+                        .escape => try dot.pushAction(.{ .SetMode = .Normal }),
                         .ascii => |c| {
-                            action = .{ .CommandChar = c };
+                            try dot.pushAction(.{ .CommandChar = c });
                         },
-                        .backspace => action = .CommandBackspace,
-                        .enter => action = .ExecuteCommand,
+                        .backspace => try dot.pushAction(.CommandBackspace),
+                        .enter => try dot.pushAction(.ExecuteCommand),
                         else => {},
                     }
                 },
             }
         }
 
-        if (action) |a| {
-            try dot.execute(a);
+        while (dot.action_queue.pop()) |act| {
+            try dot.execute(act);
         }
         try dot.win.updateSize();
     }
