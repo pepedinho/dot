@@ -104,6 +104,18 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     }
 
     try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
+
+    // Z-Index for pop box
+    var it = editor.pop_store.valueIterator();
+    while (it.next()) |p| {
+        const pop_top = p.pos.y;
+        const pop_bottom = p.pos.y + p.size.y - 1;
+
+        if (screen_y >= pop_top and screen_y <= pop_bottom) {
+            try @import("pop.zig").render(stdout, p);
+        }
+    }
+
     try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ screen_y, screen_x });
 }
 

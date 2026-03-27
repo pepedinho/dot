@@ -77,10 +77,10 @@ pub const ActionQueue = struct {
     head: usize = 0,
     tail: usize = 0,
 
-    pub fn push(self: *ActionQueue, action: Action) !void {
+    pub fn push(self: *ActionQueue, action: Action) CoreError!void {
         const next_head = (self.head + 1) % self.buffer.len;
         if (next_head == self.tail)
-            return error.QueueFull;
+            return CoreError.QueueFull;
         self.buffer[self.head] = action;
         self.head = next_head;
     }
