@@ -3,6 +3,8 @@ const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
 const keybinds = @import("keybinds.zig");
+const ui = @import("../view/ui.zig");
+const keyboard = @import("../view/keyboard.zig");
 
 pub const CoreError = error{
     NoFileName,
@@ -406,5 +408,78 @@ pub const Editor = struct {
         }
 
         return camera_moved;
+    }
+
+    pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
+        while (self.is_running) {
+            if (self.is_dirty) {
+                if (self.scroll()) {
+                    self.needs_redraw = true;
+                }
+
+                if (self.needs_redraw) {
+                    try ui.refreshScreen(stdout, self);
+                    self.needs_redraw = false;
+                } else {
+                    try ui.updateCurrentLine(stdout, self);
+                }
+                self.is_dirty = false;
+            }
+
+            try stdout.flush();
+
+            const key = try keyboard.readKey();
+            try self.scheduler.update(&self.action_queue);
+
+            if (key != .none) {
+                self.is_dirty = true;
+                switch (self.mode) {
+                    .Normal => {
+                        switch (key) {
+                            .ascii => |c| {
+                                if (self.key_binds.get(c)) |a| {
+                                    try self.pushAction(a);
+                                }
+                            },
+                            .left => try self.pushAction(.MoveLeft),
+                            .right => try self.pushAction(.MoveRight),
+                            .down => try self.pushAction(.MoveDown),
+                            .up => try self.pushAction(.MoveUp),
+                            else => {},
+                        }
+                    },
+                    .Insert => {
+                        switch (key) {
+                            .escape => try self.pushAction(.{ .SetMode = .Normal }),
+                            .ascii => |c| try self.pushAction(.{ .InsertChar = c }),
+                            .enter => try self.pushAction(.InsertNewLine),
+                            .backspace => try self.pushAction(.DeleteChar),
+                            .left => try self.pushAction(.MoveLeft),
+                            .right => try self.pushAction(.MoveRight),
+                            .up => try self.pushAction(.MoveUp),
+                            .down => try self.pushAction(.MoveDown),
+                            else => {},
+                        }
+                    },
+                    .Command => {
+                        switch (key) {
+                            .escape => try self.pushAction(.{ .SetMode = .Normal }),
+                            .ascii => |c| {
+                                try self.pushAction(.{ .CommandChar = c });
+                            },
+                            .backspace => try self.pushAction(.CommandBackspace),
+                            .enter => try self.pushAction(.ExecuteCommand),
+                            else => {},
+                        }
+                    },
+                }
+            }
+
+            while (self.action_queue.pop()) |act| {
+                try self.execute(act);
+            }
+            try self.win.updateSize();
+            std.Thread.sleep(16_000_000);
+        }
     }
 };
