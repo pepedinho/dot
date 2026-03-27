@@ -18,6 +18,9 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
     var screen_row = view.y;
     const max_rows = view.y + view.height - 1;
 
+    const clear_to_eol = "\x1b[K";
+    try ansi.goto(stdout, screen_row, view.x);
+
     const parts = [_][]const u8{ part1, part2 };
     for (parts) |part| {
         for (part) |c| {
@@ -25,8 +28,12 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
 
             if (c == '\n') {
                 if (current_row > view.row_offset) {
-                    try stdout.writeAll("\r\n");
+                    try stdout.writeAll(clear_to_eol);
+                    // try stdout.writeAll("\r\n");
                     screen_row += 1;
+                    if (screen_row <= max_rows) {
+                        try ansi.goto(stdout, screen_row, view.x);
+                    }
                 }
                 current_row += 1;
                 current_col = 1;
@@ -35,8 +42,7 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
                 for (0..TAB_SIZE) |_| {
                     if (current_row > view.row_offset) {
                         if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                            // Attention : on ajoute view.x pour décaler le texte si c'est un split droit
-                            try ansi.goto(stdout, screen_row, view.x + current_col - view.col_offset - 1);
+                            // try ansi.goto(stdout, screen_row, view.x + current_col - view.col_offset - 1);
                             try stdout.writeAll(" ");
                         }
                     }
@@ -45,13 +51,18 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
             } else {
                 if (current_row > view.row_offset) {
                     if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                        try ansi.goto(stdout, screen_row, view.x + current_col - view.col_offset - 1);
+                        // try ansi.goto(stdout, screen_row, view.x + current_col - view.col_offset - 1);
                         try stdout.writeAll(&[_]u8{c});
                     }
                 }
                 current_col += 1;
             }
         }
+    }
+
+    while (screen_row <= max_rows) : (screen_row += 1) {
+        try ansi.goto(stdout, screen_row, view.x);
+        try stdout.writeAll(clear_to_eol);
     }
 }
 
