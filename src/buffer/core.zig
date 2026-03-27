@@ -138,6 +138,7 @@ pub const Editor = struct {
     last_mode: Mode,
     is_running: bool,
     needs_redraw: bool,
+    is_dirty: bool = true,
     row_offset: usize = 0,
     col_offset: usize = 0,
     win: Window,
