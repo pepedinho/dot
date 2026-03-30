@@ -6,6 +6,7 @@ const keybinds = @import("keybinds.zig");
 const ui = @import("../view/ui.zig");
 const keyboard = @import("../view/keyboard.zig");
 const pane = @import("pane.zig");
+const fs = @import("../fs/filesystem.zig");
 
 pub const CoreError = error{
     NoFileName,
@@ -378,6 +379,18 @@ pub const Editor = struct {
         } else if (std.mem.eql(u8, cmd, "goto") and utils.isDigitSlice(args)) {
             const idx = try std.fmt.parseInt(usize, args, 10);
             self.switchView(idx);
+        } else if (std.mem.eql(u8, cmd, "open")) {
+            const content = try fs.Fs.loadFast(self.allocator, args);
+            defer self.allocator.free(content);
+            const new_buf = try self.allocator.create(buffer.GapBuffer);
+            new_buf.* = try buffer.GapBuffer.initFromFile(self.allocator, content);
+
+            try self.buffers.append(self.allocator, new_buf);
+            view.buf = new_buf;
+            view.col_offset = 0;
+            view.row_offset = 0;
+            self.filename = args; // need to be reworked
+            self.needs_redraw = true;
         } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
             view.buf.jumpTo(.{ .x = 1, .y = l });
