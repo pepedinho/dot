@@ -5,6 +5,7 @@ const utils = @import("../utils.zig");
 const keybinds = @import("keybinds.zig");
 const ui = @import("../view/ui.zig");
 const keyboard = @import("../view/keyboard.zig");
+const pane = @import("pane.zig");
 
 pub const CoreError = error{
     NoFileName,
@@ -40,6 +41,8 @@ pub const Action = union(enum) {
     CommandBackspace,
     ExecuteCommand,
     ClearCommandBuf,
+    // SplitView,
+    // GotoView: u8,
     Quit,
     Tick,
 };
@@ -135,14 +138,14 @@ pub const Scheduler = struct {
 
 pub const Editor = struct {
     allocator: std.mem.Allocator,
-    buf: buffer.GapBuffer,
+    buffers: std.ArrayList(*buffer.GapBuffer),
+    views: std.ArrayList(pane.View),
+    active_view_idx: usize = 0,
     mode: Mode,
     last_mode: Mode,
     is_running: bool,
     needs_redraw: bool,
     is_dirty: bool = true,
-    row_offset: usize = 0,
-    col_offset: usize = 0,
     win: Window,
     cmd_buf: std.ArrayListUnmanaged(u8),
     filename: ?[]const u8,
@@ -155,7 +158,7 @@ pub const Editor = struct {
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
             .allocator = allocator,
-            .buf = try buffer.GapBuffer.init(allocator),
+            .buffers = .empty,
             .mode = .Normal,
             .last_mode = .Normal,
             .is_running = true,
@@ -165,10 +168,27 @@ pub const Editor = struct {
             .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
+            .views = .empty,
         };
+
+        const main_buf = try allocator.create(buffer.GapBuffer);
+        main_buf.* = try buffer.GapBuffer.init(allocator);
+        try ed.buffers.append(allocator, main_buf);
+
+        try ed.views.append(ed.allocator, pane.View{
+            .x = 1,
+            .y = 1,
+            .width = ed.win.cols,
+            .height = if (ed.win.rows > 0) ed.win.rows - 1 else 0,
+            .buf = main_buf,
+        });
 
         try ed.scheduler.add(.Tick, 33);
         return ed;
+    }
+
+    pub fn getActiveView(self: *Editor) *pane.View {
+        return &self.views.items[self.active_view_idx];
     }
 
     pub fn loadStandardKeyBinds(self: *Editor) !void {
@@ -176,15 +196,19 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
-        self.buf.deinit();
-
         var it = self.pop_store.valueIterator();
         while (it.next()) |v| {
             v.deinit();
         }
+        for (self.buffers.items) |b| {
+            b.deinit();
+            self.allocator.destroy(b);
+        }
+        self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
         self.key_binds.deinit();
         self.cmd_buf.deinit(self.allocator);
+        self.views.deinit(self.allocator);
     }
 
     pub fn pushAction(self: *Editor, action: Action) !void {
@@ -204,6 +228,7 @@ pub const Editor = struct {
     }
 
     pub fn execute(self: *Editor, action: Action) !void {
+        const view = self.getActiveView();
         switch (action) {
             .Tick => {
                 const now = std.time.milliTimestamp();
@@ -235,31 +260,32 @@ pub const Editor = struct {
             },
             .Quit => self.quit(),
             .InsertChar => |c| {
-                try self.buf.insertChar(c);
+                try view.buf.insertChar(c);
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
-                try self.buf.insertChar('\n');
+                try view.buf.insertChar('\n');
                 self.needs_redraw = true;
             },
             .DeleteChar => {
-                self.buf.backspace();
-                self.needs_redraw = true;
+                const delete_nl = view.buf.gap_start > 0 and view.buf.buffer[view.buf.gap_start - 1] == '\n';
+                view.buf.backspace();
+                self.needs_redraw = delete_nl;
             },
             .MoveLeft => {
-                self.buf.moveCursorLeft();
+                view.buf.moveCursorLeft();
                 self.needs_redraw = false;
             },
             .MoveRight => {
-                self.buf.moveCursorRight();
+                view.buf.moveCursorRight();
                 self.needs_redraw = false;
             },
             .MoveDown => {
-                self.buf.moveCursorDown();
+                view.buf.moveCursorDown();
                 self.needs_redraw = false;
             },
             .MoveUp => {
-                self.buf.moveCursorUp();
+                view.buf.moveCursorUp();
                 self.needs_redraw = false;
             },
             .Append => {
@@ -287,6 +313,7 @@ pub const Editor = struct {
             },
             .ExecuteCommand => {
                 try self.executeCmd();
+                self.needs_redraw = true;
             },
             .ClearCommandBuf => {
                 self.cmd_buf.clearRetainingCapacity();
@@ -315,6 +342,8 @@ pub const Editor = struct {
             self.cmd_buf.clearRetainingCapacity();
         }
 
+        const view = self.getActiveView();
+
         const input = std.mem.trim(u8, self.cmd_buf.items, " \t");
         if (input.len == 0) return;
 
@@ -333,12 +362,25 @@ pub const Editor = struct {
             try self.saveFile();
             self.quit();
         } else if (std.mem.eql(u8, cmd, "top")) {
-            self.buf.jumpTo(.{ .x = 1, .y = 1 });
+            view.buf.jumpTo(.{ .x = 1, .y = 1 });
         } else if (std.mem.eql(u8, cmd, "file")) {
             self.loadFile(args);
+        } else if (std.mem.eql(u8, cmd, "split")) {
+            const buf = try self.allocator.create(buffer.GapBuffer);
+            buf.* = try buffer.GapBuffer.init(self.allocator);
+            try self.buffers.append(self.allocator, buf);
+            try self.splitHorizontal(buf);
+        } else if (std.mem.eql(u8, cmd, "vsplit")) {
+            const buf = try self.allocator.create(buffer.GapBuffer);
+            buf.* = try buffer.GapBuffer.init(self.allocator);
+            try self.buffers.append(self.allocator, buf);
+            try self.splitVertical(buf);
+        } else if (std.mem.eql(u8, cmd, "goto") and utils.isDigitSlice(args)) {
+            const idx = try std.fmt.parseInt(usize, args, 10);
+            self.switchView(idx);
         } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
-            self.buf.jumpTo(.{ .x = 1, .y = l });
+            view.buf.jumpTo(.{ .x = 1, .y = l });
         }
     }
 
@@ -374,6 +416,7 @@ pub const Editor = struct {
         const name = self.filename orelse {
             return try self.registerPop(null, null, "No file name", 3000);
         };
+        const view = self.getActiveView();
 
         const file = if (std.fs.path.isAbsolute(name))
             try std.fs.createFileAbsolute(name, .{})
@@ -381,40 +424,74 @@ pub const Editor = struct {
             try std.fs.cwd().createFile(name, .{});
         defer file.close();
 
-        try file.writeAll(self.buf.getFirst());
-        try file.writeAll(self.buf.getSecond());
+        try file.writeAll(view.buf.getFirst());
+        try file.writeAll(view.buf.getSecond());
     }
 
-    pub fn scroll(self: *Editor) bool {
-        var camera_moved = false;
-        const pos = self.buf.getCursorPos();
+    pub fn splitHorizontal(self: *Editor, target_buf: *buffer.GapBuffer) !void {
+        const active_idx = self.active_view_idx;
 
-        if (pos.y <= self.row_offset) {
-            self.row_offset = pos.y - 1;
-            camera_moved = true;
-        }
+        const current_height = self.views.items[active_idx].height;
+        if (current_height < 3) return;
+        const half_height = current_height / 2;
 
-        if (pos.y >= self.row_offset + self.win.rows) {
-            self.row_offset = pos.y - self.win.rows + 1;
-            camera_moved = true;
-        }
+        const remaining_height = current_height - half_height - 1;
 
-        if (pos.x <= self.col_offset) {
-            self.col_offset = pos.x - 1;
-            camera_moved = true;
-        }
-        if (pos.x >= self.col_offset + self.win.cols) {
-            self.col_offset = pos.x - self.win.cols + 1;
-            camera_moved = true;
-        }
+        self.views.items[active_idx].height = half_height;
 
-        return camera_moved;
+        const new_view = pane.View{
+            .x = self.views.items[active_idx].x,
+            .y = self.views.items[active_idx].y + @as(u16, @intCast(half_height + 1)),
+            .width = self.views.items[active_idx].width,
+            .height = remaining_height,
+            .buf = target_buf,
+            .row_offset = 0,
+            .col_offset = 0,
+        };
+
+        try self.views.append(self.allocator, new_view);
+        self.active_view_idx = self.views.items.len - 1;
+        self.needs_redraw = true;
+    }
+
+    pub fn splitVertical(self: *Editor, target_buf: *buffer.GapBuffer) !void {
+        const active_idx = self.active_view_idx;
+
+        const current_width = self.views.items[active_idx].width;
+        if (current_width < 5) return;
+
+        const half_width = current_width / 2;
+        const remaining_width = current_width - half_width - 1;
+        self.views.items[active_idx].width = half_width;
+
+        const new_view = pane.View{
+            .x = self.views.items[active_idx].x + @as(u16, @intCast(half_width)) + 1,
+            .y = self.views.items[active_idx].y, // Le Y ne change pas
+            .width = remaining_width,
+            .height = self.views.items[active_idx].height,
+            .buf = target_buf,
+            .row_offset = 0,
+            .col_offset = 0,
+        };
+
+        try self.views.append(self.allocator, new_view);
+        self.active_view_idx = self.views.items.len - 1;
+        self.needs_redraw = true;
+    }
+
+    fn switchView(self: *Editor, idx: usize) void {
+        if (idx < self.views.items.len) {
+            self.active_view_idx = idx;
+            self.needs_redraw = true;
+        }
     }
 
     pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
         while (self.is_running) {
             if (self.is_dirty) {
-                if (self.scroll()) {
+                var active = self.getActiveView();
+
+                if (active.scroll()) {
                     self.needs_redraw = true;
                 }
 

@@ -3,46 +3,53 @@ const buffer = @import("../buffer/gap.zig");
 const Editor = @import("../buffer/core.zig").Editor;
 const utils = @import("../utils.zig");
 const ansi = @import("ansi.zig");
+const View = @import("../buffer/pane.zig").View;
 
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
 
-pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
-    try stdout.writeAll(ansi.hide_cursor);
-    try stdout.writeAll(ansi.clear_screen);
-
-    const part1 = editor.buf.getFirst();
-    const part2 = editor.buf.getSecond();
+fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
+    const part1 = view.buf.getFirst();
+    const part2 = view.buf.getSecond();
 
     var current_row: usize = 1;
     var current_col: usize = 1;
-    var screen_row: usize = 1;
-    const max_rows = editor.win.rows - 1;
+
+    var screen_row = view.y;
+    const max_rows = view.y + view.height - 1;
+
+    const clear_to_eol = "\x1b[K";
+
+    try ansi.goto(stdout, screen_row, view.x);
+
     const parts = [_][]const u8{ part1, part2 };
     for (parts) |part| {
         for (part) |c| {
             if (screen_row > max_rows) break;
 
             if (c == '\n') {
-                if (current_row > editor.row_offset) {
-                    try stdout.writeAll("\r\n");
+                if (current_row > view.row_offset) {
+                    try stdout.writeAll(clear_to_eol);
                     screen_row += 1;
+                    if (screen_row <= max_rows) {
+                        try ansi.goto(stdout, screen_row, view.x);
+                    }
                 }
                 current_row += 1;
                 current_col = 1;
             } else if (c == '\t') {
                 const TAB_SIZE = 8;
                 for (0..TAB_SIZE) |_| {
-                    if (current_row > editor.row_offset) {
-                        if (current_col > editor.col_offset and current_col <= editor.col_offset + editor.win.cols) {
+                    if (current_row > view.row_offset) {
+                        if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                             try stdout.writeAll(" ");
                         }
                     }
                     current_col += 1;
                 }
             } else {
-                if (current_row > editor.row_offset) {
-                    if (current_col > editor.col_offset and current_col <= editor.col_offset + editor.win.cols) {
+                if (current_row > view.row_offset) {
+                    if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                         try stdout.writeAll(&[_]u8{c});
                     }
                 }
@@ -51,19 +58,67 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
         }
     }
 
+    if (screen_row <= max_rows) {
+        try stdout.writeAll(clear_to_eol);
+        screen_row += 1;
+    }
+
+    while (screen_row <= max_rows) : (screen_row += 1) {
+        try ansi.goto(stdout, screen_row, view.x);
+        try stdout.writeAll(clear_to_eol);
+    }
+}
+
+pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
+    try stdout.writeAll(ansi.hide_cursor);
+    try stdout.writeAll(ansi.clear_screen);
+
+    for (editor.views.items) |*view| {
+        try renderView(stdout, view);
+    }
+
+    if (editor.views.items.len > 1) {
+        try stdout.writeAll("\x1b[38;5;240m");
+
+        for (editor.views.items) |view| {
+            if (view.y > 1) {
+                try ansi.goto(stdout, view.y - 1, view.x);
+                for (0..view.width) |_| {
+                    try stdout.writeAll("─");
+                }
+            }
+
+            if (view.x > 1) {
+                for (0..view.height) |h| {
+                    try ansi.goto(stdout, view.y + h, view.x - 1);
+                    try stdout.writeAll("│");
+                }
+            }
+
+            if (view.y > 1 and view.x > 1) {
+                try ansi.goto(stdout, view.y - 1, view.x - 1);
+                try stdout.writeAll("┼");
+            }
+        }
+        try stdout.writeAll("\x1b[0m"); // Reset de la couleur
+    }
+
+    const view = editor.getActiveView();
+
     try displayMode(stdout, editor);
     try editor.renderAllPopup(stdout);
+
     if (editor.mode == .Command) {
         try commandPrompt(stdout, editor);
     } else {
-        const pos = editor.buf.getCursorPos();
-
-        const screen_y = pos.y - editor.row_offset;
-        const screen_x = pos.x - editor.col_offset;
+        const pos = view.buf.getCursorPos();
+        const screen_y = view.y + pos.y - view.row_offset - 1;
+        const screen_x = view.x + pos.x - view.col_offset - 1;
 
         try ansi.goto(stdout, screen_y, screen_x);
     }
-    try stdout.writeAll("\x1b[?25h");
+
+    try stdout.writeAll(ansi.show_cursor);
 }
 
 fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
@@ -83,28 +138,58 @@ fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
 }
 
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
-    const buf = &editor.buf;
+    const buf = editor.getActiveView().buf;
+    const view = editor.getActiveView();
     const pos = buf.getCursorPos();
 
-    const screen_y = pos.y - editor.row_offset;
-    const screen_x = pos.x - editor.col_offset;
+    const screen_y = view.y + pos.y - view.row_offset - 1;
+    const screen_x = view.x + pos.x - view.col_offset - 1;
 
     try stdout.writeAll(ansi.hide_cursor);
-    try ansi.goto(stdout, screen_y, 1);
+    try ansi.goto(stdout, screen_y, view.x);
 
     var start_of_line = buf.gap_start;
     while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
         start_of_line -= 1;
     }
 
-    try stdout.writeAll(buf.buffer[start_of_line..buf.gap_start]);
+    // try stdout.writeAll(buf.buffer[start_of_line..buf.gap_start]);
 
     var end_of_line = buf.gap_end;
     while (end_of_line < buf.buffer.len and buf.buffer[end_of_line] != '\n') {
         end_of_line += 1;
     }
 
-    try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
+    var current_col: usize = 1;
+    var drawn_chars: usize = 0;
+    const parts = [_][]const u8{ buf.buffer[start_of_line..buf.gap_start], buf.buffer[buf.gap_end..end_of_line] };
+
+    for (parts) |part| {
+        for (part) |c| {
+            if (c == '\t') {
+                const TAB_SIZE = 8;
+                for (0..TAB_SIZE) |_| {
+                    if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
+                        try stdout.writeAll(" ");
+                        drawn_chars += 1;
+                    }
+                    current_col += 1;
+                }
+            } else {
+                if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
+                    try stdout.writeAll(&[_]u8{c});
+                    drawn_chars += 1;
+                }
+                current_col += 1;
+            }
+        }
+    }
+
+    while (drawn_chars < view.width) : (drawn_chars += 1) {
+        try stdout.writeAll(" ");
+    }
+
+    // try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
 
     // Z-Index for pop box
     var it = editor.pop_store.valueIterator();
@@ -122,7 +207,7 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
 }
 
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
-    const last_pos = editor.buf.getCursorPos();
+    const last_pos = editor.getActiveView().buf.getCursorPos();
     const win = editor.win;
 
     try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
