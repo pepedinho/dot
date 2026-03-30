@@ -2,13 +2,14 @@ const std = @import("std");
 const buffer = @import("../buffer/gap.zig");
 const Editor = @import("../buffer/core.zig").Editor;
 const utils = @import("../utils.zig");
+const ansi = @import("ansi.zig");
 
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
 
 pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
-    try stdout.writeAll("\x1b[?25l");
-    try stdout.writeAll("\x1b[2J\x1b[H");
+    try stdout.writeAll(ansi.hide_cursor);
+    try stdout.writeAll(ansi.clear_screen);
 
     const part1 = editor.buf.getFirst();
     const part2 = editor.buf.getSecond();
@@ -60,7 +61,7 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
         const screen_y = pos.y - editor.row_offset;
         const screen_x = pos.x - editor.col_offset;
 
-        try stdout.print("\x1b[{d};{d}H", .{ screen_y, screen_x });
+        try ansi.goto(stdout, screen_y, screen_x);
     }
     try stdout.writeAll("\x1b[?25h");
 }
@@ -88,8 +89,8 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     const screen_y = pos.y - editor.row_offset;
     const screen_x = pos.x - editor.col_offset;
 
-    try stdout.writeAll("\x1b[?25l");
-    try stdout.print("\x1b[{d};1H\x1b[2K", .{screen_y});
+    try stdout.writeAll(ansi.hide_cursor);
+    try ansi.goto(stdout, screen_y, 1);
 
     var start_of_line = buf.gap_start;
     while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
@@ -116,7 +117,8 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
         }
     }
 
-    try stdout.print("\x1b[{d};{d}H\x1b[?25h", .{ screen_y, screen_x });
+    try ansi.goto(stdout, screen_y, screen_x);
+    try stdout.writeAll(ansi.show_cursor);
 }
 
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
@@ -126,11 +128,11 @@ pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
     const mode = @intFromEnum(editor.mode);
     try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
-    try stdout.print("\x1b[{d};{d}H", .{ last_pos.y, last_pos.x });
+    try ansi.goto(stdout, last_pos.y, last_pos.x);
 }
 
 pub fn insertLine(stdout: *std.Io.Writer, text: []const u8, row: usize) !void {
-    try stdout.writeAll("\x1b[?25h"); // display cursor
+    try stdout.writeAll(ansi.show_cursor); // display cursor
     try stdout.print("\x1b[{d};1H\x1b[2K", .{row});
     try stdout.print("{s}\x1b[m", .{text});
 }
