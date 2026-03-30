@@ -41,6 +41,8 @@ pub const Action = union(enum) {
     CommandBackspace,
     ExecuteCommand,
     ClearCommandBuf,
+    // SplitView,
+    // GotoView: u8,
     Quit,
     Tick,
 };
@@ -362,6 +364,14 @@ pub const Editor = struct {
             view.buf.jumpTo(.{ .x = 1, .y = 1 });
         } else if (std.mem.eql(u8, cmd, "file")) {
             self.loadFile(args);
+        } else if (std.mem.eql(u8, cmd, "split")) {
+            const buf = try self.allocator.create(buffer.GapBuffer);
+            buf.* = try buffer.GapBuffer.init(self.allocator);
+            try self.buffers.append(self.allocator, buf);
+            try self.splitHorizontal(buf);
+        } else if (std.mem.eql(u8, cmd, "goto") and utils.isDigitSlice(args)) {
+            const idx = try std.fmt.parseInt(usize, args, 10);
+            self.switchView(idx);
         } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
             view.buf.jumpTo(.{ .x = 1, .y = l });
