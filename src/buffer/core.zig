@@ -411,32 +411,37 @@ pub const Editor = struct {
         try file.writeAll(view.buf.getFirst());
         try file.writeAll(view.buf.getSecond());
     }
-    //
-    // pub fn scroll(self: *Editor) bool {
-    //     var camera_moved = false;
-    //     const pos = self.buf.getCursorPos();
-    //
-    //     if (pos.y <= self.row_offset) {
-    //         self.row_offset = pos.y - 1;
-    //         camera_moved = true;
-    //     }
-    //
-    //     if (pos.y >= self.row_offset + self.win.rows) {
-    //         self.row_offset = pos.y - self.win.rows + 1;
-    //         camera_moved = true;
-    //     }
-    //
-    //     if (pos.x <= self.col_offset) {
-    //         self.col_offset = pos.x - 1;
-    //         camera_moved = true;
-    //     }
-    //     if (pos.x >= self.col_offset + self.win.cols) {
-    //         self.col_offset = pos.x - self.win.cols + 1;
-    //         camera_moved = true;
-    //     }
-    //
-    //     return camera_moved;
-    // }
+
+    pub fn splitHorizontal(self: *Editor, target_buf: *buffer.GapBuffer) !void {
+        const active_idx = self.active_view_idx;
+
+        const current_height = self.views.items[active_idx].height;
+        const half_height = current_height / 2;
+        const remaininig_height = current_height - half_height;
+
+        self.views.items[active_idx].height = half_height;
+
+        const new_view = pane.View{
+            .x = self.views.items[active_idx].x,
+            .y = self.views.items[active_idx].y,
+            .width = self.views.items[active_idx].width,
+            .height = remaininig_height,
+            .buf = target_buf,
+            .row_offset = 0,
+            .col_offset = 0,
+        };
+
+        try self.views.append(self.allocator, new_view);
+        self.active_view_idx = self.views.items.len - 1;
+        self.needs_redraw = true;
+    }
+
+    fn switchView(self: *Editor, idx: usize) void {
+        if (idx < self.views.items.len) {
+            self.active_view_idx = idx;
+            self.needs_redraw = true;
+        }
+    }
 
     pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
         while (self.is_running) {
