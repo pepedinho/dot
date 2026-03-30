@@ -322,6 +322,19 @@ pub const Editor = struct {
         }
     }
 
+    fn getCurrentBufferIdx(self: *Editor) usize {
+        const view = self.getActiveView();
+
+        var current_buffer_idx: usize = 0;
+        for (self.buffers.items, 0..) |b, i| {
+            if (b == view.buf) {
+                current_buffer_idx = i;
+                break;
+            }
+        }
+        return current_buffer_idx;
+    }
+
     pub fn registerPop(self: *Editor, pos: ?utils.Pos, size: ?utils.Pos, text: []const u8, duration: ?u32) !void {
         const w_s = self.win;
         const popup = PopBuilder{
@@ -390,6 +403,30 @@ pub const Editor = struct {
             view.col_offset = 0;
             view.row_offset = 0;
             self.filename = args; // need to be reworked
+            self.needs_redraw = true;
+        } else if (std.mem.eql(u8, cmd, "bprev")) {
+            if (self.buffers.items.len <= 1) return;
+
+            const current_buffer_idx = self.getCurrentBufferIdx();
+
+            const prev_idx = if (current_buffer_idx == 0)
+                self.buffers.items.len - 1
+            else
+                current_buffer_idx - 1;
+
+            view.buf = self.buffers.items[prev_idx];
+            view.col_offset = 0;
+            view.row_offset = 0;
+            self.needs_redraw = true;
+        } else if (std.mem.eql(u8, cmd, "bnext")) {
+            if (self.buffers.items.len <= 1) return;
+            const current_buffer_idx = self.getCurrentBufferIdx();
+
+            const next_idx = (current_buffer_idx + 1) % self.buffers.items.len;
+
+            view.buf = self.buffers.items[next_idx];
+            view.col_offset = 0;
+            view.row_offset = 0;
             self.needs_redraw = true;
         } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
