@@ -78,18 +78,29 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     }
 
     if (editor.views.items.len > 1) {
-        try stdout.writeAll("\x1b[48;5;236m\x1b[38;5;250m");
+        try stdout.writeAll("\x1b[38;5;240m");
 
-        for (editor.views.items, 0..) |view, i| {
-            if (i == 0) continue; // Pas de bordure pour la vue tout en haut
+        for (editor.views.items) |view| {
+            if (view.y > 1) {
+                try ansi.goto(stdout, view.y - 1, view.x);
+                for (0..view.width) |_| {
+                    try stdout.writeAll("─");
+                }
+            }
 
-            try ansi.goto(stdout, view.y - 1, view.x);
+            if (view.x > 1) {
+                for (0..view.height) |h| {
+                    try ansi.goto(stdout, view.y + h, view.x - 1);
+                    try stdout.writeAll("│");
+                }
+            }
 
-            for (0..view.width) |_| {
-                try stdout.writeAll("─");
+            if (view.y > 1 and view.x > 1) {
+                try ansi.goto(stdout, view.y - 1, view.x - 1);
+                try stdout.writeAll("┼");
             }
         }
-        try stdout.writeAll("\x1b[0m");
+        try stdout.writeAll("\x1b[0m"); // Reset de la couleur
     }
 
     const view = editor.getActiveView();

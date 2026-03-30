@@ -369,6 +369,11 @@ pub const Editor = struct {
             buf.* = try buffer.GapBuffer.init(self.allocator);
             try self.buffers.append(self.allocator, buf);
             try self.splitHorizontal(buf);
+        } else if (std.mem.eql(u8, cmd, "vsplit")) {
+            const buf = try self.allocator.create(buffer.GapBuffer);
+            buf.* = try buffer.GapBuffer.init(self.allocator);
+            try self.buffers.append(self.allocator, buf);
+            try self.splitVertical(buf);
         } else if (std.mem.eql(u8, cmd, "goto") and utils.isDigitSlice(args)) {
             const idx = try std.fmt.parseInt(usize, args, 10);
             self.switchView(idx);
@@ -438,6 +443,31 @@ pub const Editor = struct {
             .y = self.views.items[active_idx].y + @as(u16, @intCast(half_height)),
             .width = self.views.items[active_idx].width,
             .height = remaininig_height,
+            .buf = target_buf,
+            .row_offset = 0,
+            .col_offset = 0,
+        };
+
+        try self.views.append(self.allocator, new_view);
+        self.active_view_idx = self.views.items.len - 1;
+        self.needs_redraw = true;
+    }
+
+    pub fn splitVertical(self: *Editor, target_buf: *buffer.GapBuffer) !void {
+        const active_idx = self.active_view_idx;
+
+        const current_width = self.views.items[active_idx].width;
+        if (current_width < 5) return;
+
+        const half_width = current_width / 2;
+        const remaining_width = current_width - half_width - 1;
+        self.views.items[active_idx].width = half_width;
+
+        const new_view = pane.View{
+            .x = self.views.items[active_idx].x + @as(u16, @intCast(half_width)) + 1,
+            .y = self.views.items[active_idx].y, // Le Y ne change pas
+            .width = remaining_width,
+            .height = self.views.items[active_idx].height,
             .buf = target_buf,
             .row_offset = 0,
             .col_offset = 0,
