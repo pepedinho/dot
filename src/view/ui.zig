@@ -161,6 +161,7 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     }
 
     var current_col: usize = 1;
+    var drawn_chars: usize = 0;
     const parts = [_][]const u8{ buf.buffer[start_of_line..buf.gap_start], buf.buffer[buf.gap_end..end_of_line] };
 
     for (parts) |part| {
@@ -170,21 +171,25 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
                 for (0..TAB_SIZE) |_| {
                     if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                         try stdout.writeAll(" ");
+                        drawn_chars += 1;
                     }
                     current_col += 1;
                 }
             } else {
                 if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                     try stdout.writeAll(&[_]u8{c});
+                    drawn_chars += 1;
                 }
                 current_col += 1;
             }
         }
     }
 
-    // try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
+    while (drawn_chars < view.width) : (drawn_chars += 1) {
+        try stdout.writeAll(" ");
+    }
 
-    try stdout.writeAll("\x1b[K");
+    // try stdout.writeAll(buf.buffer[buf.gap_end..end_of_line]);
 
     // Z-Index for pop box
     var it = editor.pop_store.valueIterator();

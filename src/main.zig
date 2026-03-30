@@ -41,9 +41,9 @@ pub fn main() !void {
 
         if (Fs.loadFast(dot.allocator, filename)) |file_content| {
             defer allocator.free(file_content);
-            const activ_buf = dot.getActiveView().buf;
-            activ_buf.deinit();
-            activ_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, file_content);
+            const active_buf = dot.getActiveView().buf;
+            active_buf.deinit();
+            active_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, file_content);
         } else |err| {
             if (err != error.FileNotFound) {
                 return err;

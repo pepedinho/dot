@@ -268,8 +268,9 @@ pub const Editor = struct {
                 self.needs_redraw = true;
             },
             .DeleteChar => {
+                const delete_nl = view.buf.gap_start > 0 and view.buf.buffer[view.buf.gap_start - 1] == '\n';
                 view.buf.backspace();
-                self.needs_redraw = false;
+                self.needs_redraw = delete_nl;
             },
             .MoveLeft => {
                 view.buf.moveCursorLeft();
@@ -434,15 +435,15 @@ pub const Editor = struct {
         if (current_height < 3) return;
         const half_height = current_height / 2;
 
-        const remaininig_height = current_height - half_height - 1;
+        const remaining_height = current_height - half_height - 1;
 
         self.views.items[active_idx].height = half_height;
 
         const new_view = pane.View{
             .x = self.views.items[active_idx].x,
-            .y = self.views.items[active_idx].y + @as(u16, @intCast(half_height)),
+            .y = self.views.items[active_idx].y + @as(u16, @intCast(half_height + 1)),
             .width = self.views.items[active_idx].width,
-            .height = remaininig_height,
+            .height = remaining_height,
             .buf = target_buf,
             .row_offset = 0,
             .col_offset = 0,
