@@ -19,6 +19,7 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
     const max_rows = view.y + view.height - 1;
 
     const clear_to_eol = "\x1b[K";
+
     try ansi.goto(stdout, screen_row, view.x);
 
     const parts = [_][]const u8{ part1, part2 };
@@ -29,7 +30,6 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
             if (c == '\n') {
                 if (current_row > view.row_offset) {
                     try stdout.writeAll(clear_to_eol);
-                    // try stdout.writeAll("\r\n");
                     screen_row += 1;
                     if (screen_row <= max_rows) {
                         try ansi.goto(stdout, screen_row, view.x);
@@ -42,7 +42,6 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
                 for (0..TAB_SIZE) |_| {
                     if (current_row > view.row_offset) {
                         if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                            // try ansi.goto(stdout, screen_row, view.x + current_col - view.col_offset - 1);
                             try stdout.writeAll(" ");
                         }
                     }
@@ -51,7 +50,6 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
             } else {
                 if (current_row > view.row_offset) {
                     if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                        // try ansi.goto(stdout, screen_row, view.x + current_col - view.col_offset - 1);
                         try stdout.writeAll(&[_]u8{c});
                     }
                 }
@@ -60,8 +58,11 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
         }
     }
 
-    try stdout.writeAll(clear_to_eol);
-    screen_row += 1;
+    if (screen_row <= max_rows) {
+        try stdout.writeAll(clear_to_eol);
+        screen_row += 1;
+    }
+
     while (screen_row <= max_rows) : (screen_row += 1) {
         try ansi.goto(stdout, screen_row, view.x);
         try stdout.writeAll(clear_to_eol);
@@ -74,6 +75,21 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
 
     for (editor.views.items) |*view| {
         try renderView(stdout, view);
+    }
+
+    if (editor.views.items.len > 1) {
+        try stdout.writeAll("\x1b[48;5;236m\x1b[38;5;250m");
+
+        for (editor.views.items, 0..) |view, i| {
+            if (i == 0) continue; // Pas de bordure pour la vue tout en haut
+
+            try ansi.goto(stdout, view.y - 1, view.x);
+
+            for (0..view.width) |_| {
+                try stdout.writeAll("─");
+            }
+        }
+        try stdout.writeAll("\x1b[0m");
     }
 
     const view = editor.getActiveView();

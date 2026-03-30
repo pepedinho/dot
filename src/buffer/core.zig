@@ -426,14 +426,16 @@ pub const Editor = struct {
         const active_idx = self.active_view_idx;
 
         const current_height = self.views.items[active_idx].height;
+        if (current_height < 3) return;
         const half_height = current_height / 2;
-        const remaininig_height = current_height - half_height;
+
+        const remaininig_height = current_height - half_height - 1;
 
         self.views.items[active_idx].height = half_height;
 
         const new_view = pane.View{
             .x = self.views.items[active_idx].x,
-            .y = self.views.items[active_idx].y,
+            .y = self.views.items[active_idx].y + @as(u16, @intCast(half_height)),
             .width = self.views.items[active_idx].width,
             .height = remaininig_height,
             .buf = target_buf,
