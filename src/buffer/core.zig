@@ -136,7 +136,7 @@ pub const Scheduler = struct {
 
 pub const Editor = struct {
     allocator: std.mem.Allocator,
-    buf: buffer.GapBuffer,
+    buffers: std.ArrayList(*buffer.GapBuffer),
     views: std.ArrayList(pane.View),
     active_view_idx: usize = 0,
     mode: Mode,
@@ -156,7 +156,7 @@ pub const Editor = struct {
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
             .allocator = allocator,
-            .buf = try buffer.GapBuffer.init(allocator),
+            .buffers = .empty,
             .mode = .Normal,
             .last_mode = .Normal,
             .is_running = true,
@@ -169,12 +169,16 @@ pub const Editor = struct {
             .views = .empty,
         };
 
+        const main_buf = try allocator.create(buffer.GapBuffer);
+        main_buf.* = try buffer.GapBuffer.init(allocator);
+        try ed.buffers.append(allocator, main_buf);
+
         try ed.views.append(ed.allocator, pane.View{
             .x = 1,
             .y = 1,
             .width = ed.win.cols,
             .height = if (ed.win.rows > 0) ed.win.rows - 1 else 0,
-            .buf = &ed.buf,
+            .buf = main_buf,
         });
 
         try ed.scheduler.add(.Tick, 33);
@@ -190,12 +194,15 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
-        self.buf.deinit();
-
         var it = self.pop_store.valueIterator();
         while (it.next()) |v| {
             v.deinit();
         }
+        for (self.buffers.items) |b| {
+            b.deinit();
+            self.allocator.destroy(b);
+        }
+        self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
         self.key_binds.deinit();
         self.cmd_buf.deinit(self.allocator);
@@ -219,6 +226,7 @@ pub const Editor = struct {
     }
 
     pub fn execute(self: *Editor, action: Action) !void {
+        const view = self.getActiveView();
         switch (action) {
             .Tick => {
                 const now = std.time.milliTimestamp();
@@ -250,31 +258,31 @@ pub const Editor = struct {
             },
             .Quit => self.quit(),
             .InsertChar => |c| {
-                try self.buf.insertChar(c);
+                try view.buf.insertChar(c);
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
-                try self.buf.insertChar('\n');
+                try view.buf.insertChar('\n');
                 self.needs_redraw = true;
             },
             .DeleteChar => {
-                self.buf.backspace();
+                view.buf.backspace();
                 self.needs_redraw = false;
             },
             .MoveLeft => {
-                self.buf.moveCursorLeft();
+                view.buf.moveCursorLeft();
                 self.needs_redraw = false;
             },
             .MoveRight => {
-                self.buf.moveCursorRight();
+                view.buf.moveCursorRight();
                 self.needs_redraw = false;
             },
             .MoveDown => {
-                self.buf.moveCursorDown();
+                view.buf.moveCursorDown();
                 self.needs_redraw = false;
             },
             .MoveUp => {
-                self.buf.moveCursorUp();
+                view.buf.moveCursorUp();
                 self.needs_redraw = false;
             },
             .Append => {
@@ -331,6 +339,8 @@ pub const Editor = struct {
             self.cmd_buf.clearRetainingCapacity();
         }
 
+        const view = self.getActiveView();
+
         const input = std.mem.trim(u8, self.cmd_buf.items, " \t");
         if (input.len == 0) return;
 
@@ -349,12 +359,12 @@ pub const Editor = struct {
             try self.saveFile();
             self.quit();
         } else if (std.mem.eql(u8, cmd, "top")) {
-            self.buf.jumpTo(.{ .x = 1, .y = 1 });
+            view.buf.jumpTo(.{ .x = 1, .y = 1 });
         } else if (std.mem.eql(u8, cmd, "file")) {
             self.loadFile(args);
         } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
-            self.buf.jumpTo(.{ .x = 1, .y = l });
+            view.buf.jumpTo(.{ .x = 1, .y = l });
         }
     }
 
@@ -390,6 +400,7 @@ pub const Editor = struct {
         const name = self.filename orelse {
             return try self.registerPop(null, null, "No file name", 3000);
         };
+        const view = self.getActiveView();
 
         const file = if (std.fs.path.isAbsolute(name))
             try std.fs.createFileAbsolute(name, .{})
@@ -397,8 +408,8 @@ pub const Editor = struct {
             try std.fs.cwd().createFile(name, .{});
         defer file.close();
 
-        try file.writeAll(self.buf.getFirst());
-        try file.writeAll(self.buf.getSecond());
+        try file.writeAll(view.buf.getFirst());
+        try file.writeAll(view.buf.getSecond());
     }
     //
     // pub fn scroll(self: *Editor) bool {

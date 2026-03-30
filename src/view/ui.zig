@@ -111,7 +111,7 @@ fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
 }
 
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
-    const buf = &editor.buf;
+    const buf = editor.getActiveView().buf;
     const view = editor.getActiveView();
     const pos = buf.getCursorPos();
 
@@ -175,7 +175,7 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
 }
 
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
-    const last_pos = editor.buf.getCursorPos();
+    const last_pos = editor.getActiveView().buf.getCursorPos();
     const win = editor.win;
 
     try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
