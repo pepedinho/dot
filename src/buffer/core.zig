@@ -137,7 +137,8 @@ pub const Scheduler = struct {
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buf: buffer.GapBuffer,
-    active_view: pane.View,
+    views: std.ArrayList(pane.View),
+    active_view_idx: usize = 0,
     mode: Mode,
     last_mode: Mode,
     is_running: bool,
@@ -165,19 +166,23 @@ pub const Editor = struct {
             .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
-            .active_view = undefined,
+            .views = .empty,
         };
 
-        ed.active_view = pane.View{
+        try ed.views.append(ed.allocator, pane.View{
             .x = 1,
             .y = 1,
             .width = ed.win.cols,
             .height = if (ed.win.rows > 0) ed.win.rows - 1 else 0,
             .buf = &ed.buf,
-        };
+        });
 
         try ed.scheduler.add(.Tick, 33);
         return ed;
+    }
+
+    pub fn getActiveView(self: *Editor) *pane.View {
+        return &self.views.items[self.active_view_idx];
     }
 
     pub fn loadStandardKeyBinds(self: *Editor) !void {
@@ -194,6 +199,7 @@ pub const Editor = struct {
         self.pop_store.deinit();
         self.key_binds.deinit();
         self.cmd_buf.deinit(self.allocator);
+        self.views.deinit(self.allocator);
     }
 
     pub fn pushAction(self: *Editor, action: Action) !void {
@@ -424,7 +430,9 @@ pub const Editor = struct {
     pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
         while (self.is_running) {
             if (self.is_dirty) {
-                if (self.active_view.scroll()) {
+                var active = self.getActiveView();
+
+                if (active.scroll()) {
                     self.needs_redraw = true;
                 }
 

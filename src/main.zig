@@ -43,7 +43,7 @@ pub fn main() !void {
             dot.buf.deinit();
             defer allocator.free(file_content);
             dot.buf = try buffer.GapBuffer.initFromFile(allocator, file_content);
-            dot.active_view.buf = &dot.buf;
+            dot.getActiveView().buf = &dot.buf;
         } else |err| {
             if (err != error.FileNotFound) {
                 return err;

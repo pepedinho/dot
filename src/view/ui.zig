@@ -72,7 +72,11 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.hide_cursor);
     try stdout.writeAll(ansi.clear_screen);
 
-    try renderView(stdout, &editor.active_view);
+    for (editor.views.items) |*view| {
+        try renderView(stdout, view);
+    }
+
+    const view = editor.getActiveView();
 
     try displayMode(stdout, editor);
     try editor.renderAllPopup(stdout);
@@ -80,9 +84,9 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     if (editor.mode == .Command) {
         try commandPrompt(stdout, editor);
     } else {
-        const pos = editor.active_view.buf.getCursorPos();
-        const screen_y = editor.active_view.y + pos.y - editor.active_view.row_offset - 1;
-        const screen_x = editor.active_view.x + pos.x - editor.active_view.col_offset - 1;
+        const pos = view.buf.getCursorPos();
+        const screen_y = view.y + pos.y - view.row_offset - 1;
+        const screen_x = view.x + pos.x - view.col_offset - 1;
 
         try ansi.goto(stdout, screen_y, screen_x);
     }
@@ -108,13 +112,14 @@ fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
 
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     const buf = &editor.buf;
+    const view = editor.getActiveView();
     const pos = buf.getCursorPos();
 
-    const screen_y = editor.active_view.y + pos.y - editor.active_view.row_offset - 1;
-    const screen_x = editor.active_view.x + pos.x - editor.active_view.col_offset - 1;
+    const screen_y = view.y + pos.y - view.row_offset - 1;
+    const screen_x = view.x + pos.x - view.col_offset - 1;
 
     try stdout.writeAll(ansi.hide_cursor);
-    try ansi.goto(stdout, screen_y, editor.active_view.x);
+    try ansi.goto(stdout, screen_y, view.x);
 
     var start_of_line = buf.gap_start;
     while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
@@ -136,13 +141,13 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
             if (c == '\t') {
                 const TAB_SIZE = 8;
                 for (0..TAB_SIZE) |_| {
-                    if (current_col > editor.active_view.col_offset and current_col <= editor.active_view.col_offset + editor.active_view.width) {
+                    if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                         try stdout.writeAll(" ");
                     }
                     current_col += 1;
                 }
             } else {
-                if (current_col > editor.active_view.col_offset and current_col <= editor.active_view.col_offset + editor.active_view.width) {
+                if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                     try stdout.writeAll(&[_]u8{c});
                 }
                 current_col += 1;
