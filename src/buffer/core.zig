@@ -353,59 +353,7 @@ pub const Editor = struct {
                 }
 
                 if (target_view) |v| {
-                    debug_buf.gap_start = 0;
-                    debug_buf.gap_end = debug_buf.buffer.len;
-
-                    var temp_memory: [4096]u8 = undefined;
-                    var fbs = std.io.fixedBufferStream(&temp_memory);
-                    const w = fbs.writer();
-
-                    w.print("=== DEBUG PANEL ===\n\n", .{}) catch {};
-                    w.print("FPS       : {d}\n", .{self.last_fps}) catch {};
-                    w.print("Mode      : {s}\n\n", .{@tagName(self.mode)}) catch {};
-
-                    w.print("--- BUFFERS ({d}) ---\n", .{self.buffers.items.len}) catch {};
-                    for (self.buffers.items, 0..) |b, i| {
-                        const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
-                        w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
-                    }
-                    w.print("\n", .{}) catch {};
-
-                    w.print("--- VIEWS ({d}) ---\n", .{self.views.items.len}) catch {};
-                    for (self.views.items, 0..) |view_item, i| {
-                        // On cherche l'index du buffer attaché à cette vue
-                        var b_idx: usize = 0;
-                        for (self.buffers.items, 0..) |b, j| {
-                            if (b == view_item.buf) {
-                                b_idx = j;
-                                break;
-                            }
-                        }
-
-                        const active_mark = if (i == self.active_view_idx) "*" else " ";
-                        const ro_mark = if (view_item.is_readonly) " [RO]" else "";
-
-                        w.print("[{d}]{s} Buf:{d} | Pos:({d},{d}) Size:{d}x{d}{s}\n", .{ i, active_mark, b_idx, view_item.x, view_item.y, view_item.width, view_item.height, ro_mark }) catch {};
-                    }
-                    w.print("\n", .{}) catch {};
-
-                    w.print("--- ACTION QUEUE ({d}) ---\n", .{self.action_queue.count()}) catch {};
-                    var curr = self.action_queue.tail;
-                    var count: usize = 0;
-                    while (curr != self.action_queue.head and count < 10) : (curr = (curr + 1) % self.action_queue.buffer.len) {
-                        const act = self.action_queue.buffer[curr];
-                        w.print("- {s}\n", .{@tagName(std.meta.activeTag(act))}) catch {};
-                        count += 1;
-                    }
-                    if (count == 0) w.print("(empty)\n", .{}) catch {};
-
-                    const final_text = fbs.getWritten();
-                    for (final_text) |c| {
-                        debug_buf.insertChar(c) catch {};
-                    }
-
-                    v.is_dirty = true;
-                    self.is_dirty = true;
+                    try self.updateDebugPanel(debug_buf, v);
                 }
             },
         }
@@ -727,27 +675,58 @@ pub const Editor = struct {
         }
     }
 
-    fn updateDebugPanel(self: *Editor) !void {
-        if (self.debug_view_idx) |idx| {
-            const debug_buf = self.views.items[idx].buf;
+    fn updateDebugPanel(self: *Editor, debug_buf: *buffer.GapBuffer, v: *pane.View) !void {
+        debug_buf.gap_start = 0;
+        debug_buf.gap_end = debug_buf.buffer.len;
 
-            debug_buf.gap_start = 0;
-            debug_buf.gap_end = debug_buf.buffer.len;
+        var temp_memory: [4096]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&temp_memory);
+        const w = fbs.writer();
 
-            var fmt_buf: [1024]u8 = undefined;
+        w.print("=== DEBUG PANEL ===\n\n", .{}) catch {};
+        w.print("FPS       : {d}\n", .{self.last_fps}) catch {};
+        w.print("Mode      : {s}\n\n", .{@tagName(self.mode)}) catch {};
 
-            const text = try std.fmt.bufPrint(&fmt_buf, "=== DEBUG PANEL ===\n\n" ++
-                "Buffers ouverts : {d}\n" ++
-                "Vues actives    : {d}\n" ++
-                "Vue courante    : {d}\n\n", .{
-                self.buffers.items.len,
-                self.views.items.len,
-                self.active_view_idx,
-            });
-
-            for (text) |c| {
-                try debug_buf.insertChar(c);
-            }
+        w.print("--- BUFFERS ({d}) ---\n", .{self.buffers.items.len}) catch {};
+        for (self.buffers.items, 0..) |b, i| {
+            const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
+            w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
         }
+        w.print("\n", .{}) catch {};
+
+        w.print("--- VIEWS ({d}) ---\n", .{self.views.items.len}) catch {};
+        for (self.views.items, 0..) |view_item, i| {
+            // On cherche l'index du buffer attaché à cette vue
+            var b_idx: usize = 0;
+            for (self.buffers.items, 0..) |b, j| {
+                if (b == view_item.buf) {
+                    b_idx = j;
+                    break;
+                }
+            }
+
+            const active_mark = if (i == self.active_view_idx) "*" else " ";
+            const ro_mark = if (view_item.is_readonly) " [RO]" else "";
+
+            w.print("[{d}]{s} Buf:{d} | Pos:({d},{d}) Size:{d}x{d}{s}\n", .{ i, active_mark, b_idx, view_item.x, view_item.y, view_item.width, view_item.height, ro_mark }) catch {};
+        }
+        w.print("\n", .{}) catch {};
+
+        w.print("--- ACTION QUEUE ({d}) ---\n", .{self.action_queue.count()}) catch {};
+        var curr = self.action_queue.tail;
+        var count: usize = 0;
+        while (curr != self.action_queue.head and count < 10) : (curr = (curr + 1) % self.action_queue.buffer.len) {
+            const act = self.action_queue.buffer[curr];
+            w.print("- {s}\n", .{@tagName(std.meta.activeTag(act))}) catch {};
+            count += 1;
+        }
+        if (count == 0) w.print("(empty)\n", .{}) catch {};
+
+        const final_text = fbs.getWritten();
+        for (final_text) |c| {
+            debug_buf.insertChar(c) catch {};
+        }
+        v.is_dirty = true;
+        self.is_dirty = true;
     }
 };
