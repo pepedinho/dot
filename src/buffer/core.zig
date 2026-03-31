@@ -99,6 +99,12 @@ pub const ActionQueue = struct {
         self.tail = (self.tail + 1) % self.buffer.len;
         return action;
     }
+
+    pub fn count(self: *ActionQueue) usize {
+        if (self.head >= self.tail) {
+            return self.head - self.tail;
+        } else return self.buffer.len - self.tail + self.head;
+    }
 };
 
 pub const Job = struct {
@@ -129,8 +135,14 @@ pub const Scheduler = struct {
         const now = std.time.milliTimestamp();
         for (&self.jobs) |*slot| {
             if (slot.*) |*job| {
-                if (now - job.last_run >= job.interval_ms) {
+                var catch_up_limit: usize = 0;
+                while (now - job.last_run >= job.interval_ms and catch_up_limit < 10) {
                     try queue.push(job.action);
+                    job.last_run += job.interval_ms;
+                    catch_up_limit += 10;
+                }
+
+                if (now - job.last_run > job.interval_ms * 10) {
                     job.last_run = now;
                 }
             }
@@ -339,13 +351,14 @@ pub const Editor = struct {
                     debug_buf.gap_end = debug_buf.buffer.len;
 
                     var temp_buf: [1024]u8 = undefined;
-                    const text = std.fmt.bufPrint(&temp_buf, "=== DEBUG PANEL ===\nBuffers: {d}\nViews: {d}\nQueue: {d}/{d}", .{ self.buffers.items.len, self.views.items.len, self.action_queue.head, self.action_queue.tail }) catch "Erreur de formatage";
+                    const text = std.fmt.bufPrint(&temp_buf, "=== DEBUG PANEL ===\nBuffers: {d}\nViews: {d}\nQueue: {d}/{d}", .{ self.buffers.items.len, self.views.items.len, self.action_queue.count(), self.action_queue.buffer.len }) catch "Erreur de formatage";
 
                     for (text) |c| {
                         debug_buf.insertChar(c) catch {};
                     }
 
                     v.is_dirty = true;
+                    self.is_dirty = true;
                 }
             },
         }
@@ -595,9 +608,9 @@ pub const Editor = struct {
                 if (self.needs_redraw) {
                     try ui.refreshScreen(stdout, self);
                     self.needs_redraw = false;
-                } else if (has_dirty_views) {
-                    try ui.refreshDirtyViews(stdout, self);
                 } else {
+                    if (has_dirty_views)
+                        try ui.refreshDirtyViews(stdout, self);
                     try ui.updateCurrentLine(stdout, self);
                 }
                 self.is_dirty = false;

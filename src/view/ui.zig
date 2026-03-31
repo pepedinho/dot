@@ -146,17 +146,23 @@ pub fn refreshDirtyViews(stdout: *std.Io.Writer, editor: *Editor) !void {
         if (view.is_dirty)
             try renderView(stdout, view);
     }
+    try editor.renderAllPopup(stdout);
 
-    const active = editor.getActiveView();
-    const pos = active.buf.getCursorPos();
-    const screen_y = active.y + pos.y - active.row_offset - 1;
-    const screen_x = active.x + pos.x - active.col_offset - 1;
+    const view = editor.getActiveView();
+    if (editor.mode == .Command) {
+        try commandPrompt(stdout, editor);
+    } else {
+        const pos = view.buf.getCursorPos();
+        const screen_y = view.y + pos.y - view.row_offset - 1;
+        const screen_x = view.x + pos.x - view.col_offset - 1;
 
-    try ansi.goto(stdout, screen_y, screen_x);
+        try ansi.goto(stdout, screen_y, screen_x);
+    }
     try stdout.writeAll(ansi.show_cursor);
 }
 
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
+    if (editor.mode == .Command) return;
     const buf = editor.getActiveView().buf;
     const view = editor.getActiveView();
     const pos = buf.getCursorPos();
