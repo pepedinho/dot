@@ -252,7 +252,6 @@ pub const Editor = struct {
                     self.needs_redraw = true;
                     self.is_dirty = true;
                 }
-                try self.updateDebugPanel();
             },
             .SetMode => |m| {
                 self.last_mode = self.mode;
@@ -326,6 +325,28 @@ pub const Editor = struct {
             },
             .ClearCommandBuf => {
                 self.cmd_buf.clearRetainingCapacity();
+            },
+            .UpdateDebugBuffer => |debug_buf| {
+                var target_view: ?*pane.View = null;
+                for (self.views.items) |*v| {
+                    if (v.buf == debug_buf) {
+                        target_view = v;
+                        break;
+                    }
+                }
+                if (target_view) |v| {
+                    debug_buf.gap_start = 0;
+                    debug_buf.gap_end = debug_buf.buffer.len;
+
+                    var temp_buf: [1024]u8 = undefined;
+                    const text = std.fmt.bufPrint(&temp_buf, "=== DEBUG PANEL ===\nBuffers: {d}\nViews: {d}\nQueue: {d}/{d}", .{ self.buffers.items.len, self.views.items.len, self.action_queue.head, self.action_queue.tail }) catch "Erreur de formatage";
+
+                    for (text) |c| {
+                        debug_buf.insertChar(c) catch {};
+                    }
+
+                    v.is_dirty = true;
+                }
             },
         }
     }
@@ -447,6 +468,7 @@ pub const Editor = struct {
                 const new_idx = self.views.items.len - 1;
                 self.views.items[new_idx].is_readonly = true;
                 self.debug_view_idx = new_idx;
+                try self.scheduler.add(.{ .UpdateDebugBuffer = buf }, 100);
                 self.needs_redraw = true;
             }
         } else if (utils.isDigitSlice(cmd)) {
@@ -565,10 +587,16 @@ pub const Editor = struct {
                 if (active.scroll()) {
                     self.needs_redraw = true;
                 }
+                var has_dirty_views = false;
+                for (self.views.items) |v| {
+                    if (v.is_dirty) has_dirty_views = true;
+                }
 
                 if (self.needs_redraw) {
                     try ui.refreshScreen(stdout, self);
                     self.needs_redraw = false;
+                } else if (has_dirty_views) {
+                    try ui.refreshDirtyViews(stdout, self);
                 } else {
                     try ui.updateCurrentLine(stdout, self);
                 }

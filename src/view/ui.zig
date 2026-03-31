@@ -8,7 +8,7 @@ const View = @import("../buffer/pane.zig").View;
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
 
-fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
+fn renderView(stdout: *std.Io.Writer, view: *View) !void {
     const part1 = view.buf.getFirst();
     const part2 = view.buf.getSecond();
 
@@ -67,6 +67,8 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
         try ansi.goto(stdout, screen_row, view.x);
         try stdout.writeAll(clear_to_eol);
     }
+
+    view.is_dirty = false;
 }
 
 pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
@@ -135,6 +137,23 @@ fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
     if (start < text.len) {
         try stdout.writeAll(text[start..text.len]);
     }
+}
+
+pub fn refreshDirtyViews(stdout: *std.Io.Writer, editor: *Editor) !void {
+    try stdout.writeAll(ansi.hide_cursor);
+
+    for (editor.views.items) |*view| {
+        if (view.is_dirty)
+            try renderView(stdout, view);
+    }
+
+    const active = editor.getActiveView();
+    const pos = active.buf.getCursorPos();
+    const screen_y = active.y + pos.y - active.row_offset - 1;
+    const screen_x = active.x + pos.x - active.col_offset - 1;
+
+    try ansi.goto(stdout, screen_y, screen_x);
+    try stdout.writeAll(ansi.show_cursor);
 }
 
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
