@@ -42,6 +42,7 @@ pub const Action = union(enum) {
     CommandBackspace,
     ExecuteCommand,
     ClearCommandBuf,
+    UpdateDebugBuffer: *buffer.GapBuffer,
     // SplitView,
     // GotoView: u8,
     Quit,
@@ -155,6 +156,7 @@ pub const Editor = struct {
     key_binds: std.AutoHashMap(u8, Action),
     action_queue: ActionQueue = .{},
     scheduler: Scheduler = .{},
+    debug_view_idx: ?usize = null,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -250,6 +252,7 @@ pub const Editor = struct {
                     self.needs_redraw = true;
                     self.is_dirty = true;
                 }
+                try self.updateDebugPanel();
             },
             .SetMode => |m| {
                 self.last_mode = self.mode;
@@ -261,14 +264,17 @@ pub const Editor = struct {
             },
             .Quit => self.quit(),
             .InsertChar => |c| {
+                if (view.is_readonly) return;
                 try view.buf.insertChar(c);
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
+                if (view.is_readonly) return;
                 try view.buf.insertChar('\n');
                 self.needs_redraw = true;
             },
             .DeleteChar => {
+                if (view.is_readonly) return;
                 const delete_nl = view.buf.gap_start > 0 and view.buf.buffer[view.buf.gap_start - 1] == '\n';
                 view.buf.backspace();
                 self.needs_redraw = delete_nl;
@@ -290,10 +296,12 @@ pub const Editor = struct {
                 self.needs_redraw = false;
             },
             .Append => {
+                if (view.is_readonly) return;
                 try self.pushAction(.MoveRight);
                 try self.pushAction(.{ .SetMode = .Insert });
             },
             .AppendNewLine => {
+                if (view.is_readonly) return;
                 try self.pushAction(.MoveDown);
                 try self.pushAction(.{ .SetMode = .Insert });
             },
@@ -428,6 +436,19 @@ pub const Editor = struct {
             view.col_offset = 0;
             view.row_offset = 0;
             self.needs_redraw = true;
+        } else if (std.mem.eql(u8, cmd, "debug")) {
+            if (self.debug_view_idx == null) {
+                const buf = try self.allocator.create(buffer.GapBuffer);
+                buf.* = try buffer.GapBuffer.init(self.allocator);
+                try self.buffers.append(self.allocator, buf);
+
+                try self.splitVertical(buf);
+
+                const new_idx = self.views.items.len - 1;
+                self.views.items[new_idx].is_readonly = true;
+                self.debug_view_idx = new_idx;
+                self.needs_redraw = true;
+            }
         } else if (utils.isDigitSlice(cmd)) {
             const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
             view.buf.jumpTo(.{ .x = 1, .y = l });
@@ -608,6 +629,30 @@ pub const Editor = struct {
             }
             try self.win.updateSize();
             std.Thread.sleep(16_000_000);
+        }
+    }
+
+    fn updateDebugPanel(self: *Editor) !void {
+        if (self.debug_view_idx) |idx| {
+            const debug_buf = self.views.items[idx].buf;
+
+            debug_buf.gap_start = 0;
+            debug_buf.gap_end = debug_buf.buffer.len;
+
+            var fmt_buf: [1024]u8 = undefined;
+
+            const text = try std.fmt.bufPrint(&fmt_buf, "=== DEBUG PANEL ===\n\n" ++
+                "Buffers ouverts : {d}\n" ++
+                "Vues actives    : {d}\n" ++
+                "Vue courante    : {d}\n\n", .{
+                self.buffers.items.len,
+                self.views.items.len,
+                self.active_view_idx,
+            });
+
+            for (text) |c| {
+                try debug_buf.insertChar(c);
+            }
         }
     }
 };

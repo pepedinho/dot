@@ -8,6 +8,7 @@ pub const View = struct {
     row_offset: usize = 0,
     col_offset: usize = 0,
     buf: *gap.GapBuffer,
+    is_readonly: bool = false,
 
     pub fn scroll(self: *View) bool {
         var camera_moved = false;
