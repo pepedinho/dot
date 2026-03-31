@@ -169,6 +169,10 @@ pub const Editor = struct {
     action_queue: ActionQueue = .{},
     scheduler: Scheduler = .{},
     debug_view_idx: ?usize = null,
+    // for fps counte
+    frame_rendered: usize = 0,
+    last_fps: usize = 0,
+    last_fps_time: i64 = 0,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -184,6 +188,7 @@ pub const Editor = struct {
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
             .views = .empty,
+            .last_fps_time = std.time.milliTimestamp(),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -346,14 +351,56 @@ pub const Editor = struct {
                         break;
                     }
                 }
+
                 if (target_view) |v| {
                     debug_buf.gap_start = 0;
                     debug_buf.gap_end = debug_buf.buffer.len;
 
-                    var temp_buf: [1024]u8 = undefined;
-                    const text = std.fmt.bufPrint(&temp_buf, "=== DEBUG PANEL ===\nBuffers: {d}\nViews: {d}\nQueue: {d}/{d}", .{ self.buffers.items.len, self.views.items.len, self.action_queue.count(), self.action_queue.buffer.len }) catch "Erreur de formatage";
+                    var temp_memory: [4096]u8 = undefined;
+                    var fbs = std.io.fixedBufferStream(&temp_memory);
+                    const w = fbs.writer();
 
-                    for (text) |c| {
+                    w.print("=== DEBUG PANEL ===\n\n", .{}) catch {};
+                    w.print("FPS       : {d}\n", .{self.last_fps}) catch {};
+                    w.print("Mode      : {s}\n\n", .{@tagName(self.mode)}) catch {};
+
+                    w.print("--- BUFFERS ({d}) ---\n", .{self.buffers.items.len}) catch {};
+                    for (self.buffers.items, 0..) |b, i| {
+                        const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
+                        w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
+                    }
+                    w.print("\n", .{}) catch {};
+
+                    w.print("--- VIEWS ({d}) ---\n", .{self.views.items.len}) catch {};
+                    for (self.views.items, 0..) |view_item, i| {
+                        // On cherche l'index du buffer attaché à cette vue
+                        var b_idx: usize = 0;
+                        for (self.buffers.items, 0..) |b, j| {
+                            if (b == view_item.buf) {
+                                b_idx = j;
+                                break;
+                            }
+                        }
+
+                        const active_mark = if (i == self.active_view_idx) "*" else " ";
+                        const ro_mark = if (view_item.is_readonly) " [RO]" else "";
+
+                        w.print("[{d}]{s} Buf:{d} | Pos:({d},{d}) Size:{d}x{d}{s}\n", .{ i, active_mark, b_idx, view_item.x, view_item.y, view_item.width, view_item.height, ro_mark }) catch {};
+                    }
+                    w.print("\n", .{}) catch {};
+
+                    w.print("--- ACTION QUEUE ({d}) ---\n", .{self.action_queue.count()}) catch {};
+                    var curr = self.action_queue.tail;
+                    var count: usize = 0;
+                    while (curr != self.action_queue.head and count < 10) : (curr = (curr + 1) % self.action_queue.buffer.len) {
+                        const act = self.action_queue.buffer[curr];
+                        w.print("- {s}\n", .{@tagName(std.meta.activeTag(act))}) catch {};
+                        count += 1;
+                    }
+                    if (count == 0) w.print("(empty)\n", .{}) catch {};
+
+                    const final_text = fbs.getWritten();
+                    for (final_text) |c| {
                         debug_buf.insertChar(c) catch {};
                     }
 
@@ -572,7 +619,7 @@ pub const Editor = struct {
 
         const new_view = pane.View{
             .x = self.views.items[active_idx].x + @as(u16, @intCast(half_width)) + 1,
-            .y = self.views.items[active_idx].y, // Le Y ne change pas
+            .y = self.views.items[active_idx].y,
             .width = remaining_width,
             .height = self.views.items[active_idx].height,
             .buf = target_buf,
@@ -667,6 +714,13 @@ pub const Editor = struct {
 
             while (self.action_queue.pop()) |act| {
                 try self.execute(act);
+            }
+            self.frame_rendered += 1;
+            const now_fps = std.time.milliTimestamp();
+            if (now_fps - self.last_fps_time >= 1000) {
+                self.last_fps = self.frame_rendered;
+                self.frame_rendered = 0;
+                self.last_fps_time = now_fps;
             }
             try self.win.updateSize();
             std.Thread.sleep(16_000_000);
