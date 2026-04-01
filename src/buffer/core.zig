@@ -696,7 +696,6 @@ pub const Editor = struct {
 
         w.print("--- VIEWS ({d}) ---\n", .{self.views.items.len}) catch {};
         for (self.views.items, 0..) |view_item, i| {
-            // On cherche l'index du buffer attaché à cette vue
             var b_idx: usize = 0;
             for (self.buffers.items, 0..) |b, j| {
                 if (b == view_item.buf) {
