@@ -8,7 +8,7 @@ const View = @import("../buffer/pane.zig").View;
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
 
-fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
+fn renderView(stdout: *std.Io.Writer, view: *View) !void {
     const part1 = view.buf.getFirst();
     const part2 = view.buf.getSecond();
 
@@ -67,16 +67,11 @@ fn renderView(stdout: *std.Io.Writer, view: *const View) !void {
         try ansi.goto(stdout, screen_row, view.x);
         try stdout.writeAll(clear_to_eol);
     }
+
+    view.is_dirty = false;
 }
 
-pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
-    try stdout.writeAll(ansi.hide_cursor);
-    try stdout.writeAll(ansi.clear_screen);
-
-    for (editor.views.items) |*view| {
-        try renderView(stdout, view);
-    }
-
+fn traceBorder(stdout: *std.Io.Writer, editor: *Editor) !void {
     if (editor.views.items.len > 1) {
         try stdout.writeAll("\x1b[38;5;240m");
 
@@ -100,8 +95,19 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
                 try stdout.writeAll("┼");
             }
         }
-        try stdout.writeAll("\x1b[0m"); // Reset de la couleur
+        try stdout.writeAll("\x1b[0m");
     }
+}
+
+pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
+    try stdout.writeAll(ansi.hide_cursor);
+    try stdout.writeAll(ansi.clear_screen);
+
+    for (editor.views.items) |*view| {
+        try renderView(stdout, view);
+    }
+
+    try traceBorder(stdout, editor);
 
     const view = editor.getActiveView();
 
@@ -137,7 +143,33 @@ fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
     }
 }
 
+pub fn refreshDirtyViews(stdout: *std.Io.Writer, editor: *Editor) !void {
+    try stdout.writeAll(ansi.hide_cursor);
+
+    for (editor.views.items) |*view| {
+        if (view.is_dirty)
+            try renderView(stdout, view);
+    }
+
+    try traceBorder(stdout, editor);
+    try displayMode(stdout, editor);
+    try editor.renderAllPopup(stdout);
+
+    const view = editor.getActiveView();
+    if (editor.mode == .Command) {
+        try commandPrompt(stdout, editor);
+    } else {
+        const pos = view.buf.getCursorPos();
+        const screen_y = view.y + pos.y - view.row_offset - 1;
+        const screen_x = view.x + pos.x - view.col_offset - 1;
+
+        try ansi.goto(stdout, screen_y, screen_x);
+    }
+    try stdout.writeAll(ansi.show_cursor);
+}
+
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
+    if (editor.mode == .Command) return;
     const buf = editor.getActiveView().buf;
     const view = editor.getActiveView();
     const pos = buf.getCursorPos();
