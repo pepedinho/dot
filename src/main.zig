@@ -1,12 +1,12 @@
 const std = @import("std");
-const buffer = @import("buffer/gap.zig");
+const buffer = @import("core/gap.zig");
 const terminal = @import("view/terminal.zig");
 const keyboard = @import("view/keyboard.zig");
 const ui = @import("view/ui.zig");
 const utils = @import("utils.zig");
-const Editor = @import("buffer/core.zig").Editor;
-const Action = @import("buffer/core.zig").Action;
-const PopBuilder = @import("buffer/core.zig").PopBuilder;
+const Editor = @import("core/core.zig").Editor;
+const Action = @import("core/core.zig").Action;
+const PopBuilder = @import("core/core.zig").PopBuilder;
 const Fs = @import("fs/filesystem.zig").Fs;
 
 pub fn main() !void {

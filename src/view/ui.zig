@@ -1,9 +1,9 @@
 const std = @import("std");
-const buffer = @import("../buffer/gap.zig");
-const Editor = @import("../buffer/core.zig").Editor;
+const buffer = @import("../core/gap.zig");
+const Editor = @import("../core/core.zig").Editor;
 const utils = @import("../utils.zig");
 const ansi = @import("ansi.zig");
-const View = @import("../buffer/pane.zig").View;
+const View = @import("../core/pane.zig").View;
 
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
@@ -239,13 +239,11 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
 }
 
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
-    const last_pos = editor.getActiveView().buf.getCursorPos();
     const win = editor.win;
 
     try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
     const mode = @intFromEnum(editor.mode);
     try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
-    try ansi.goto(stdout, last_pos.y, last_pos.x);
 }
 
 pub fn insertLine(stdout: *std.Io.Writer, text: []const u8, row: usize) !void {

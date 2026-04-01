@@ -1,6 +1,6 @@
 const std = @import("std");
 const utils = @import("../utils.zig");
-const Editor = @import("../buffer/core.zig").Editor;
+const Editor = @import("../core/core.zig").Editor;
 
 //This struct represent a `pop` windows.
 //This will be used for popup notification,
