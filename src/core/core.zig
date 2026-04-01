@@ -7,6 +7,14 @@ const ui = @import("../view/ui.zig");
 const keyboard = @import("../view/keyboard.zig");
 const pane = @import("pane.zig");
 const fs = @import("../fs/filesystem.zig");
+const actions = @import("action.zig");
+const scheduler = @import("scheduler.zig");
+const commands = @import("commands.zig");
+
+const Action = actions.Action;
+const ActionQueue = actions.ActionQueue;
+const Scheduler = scheduler.Scheduler;
+const CommandsMap = commands.CommandsMap;
 
 pub const CoreError = error{
     NoFileName,
@@ -24,29 +32,6 @@ pub const PopBuilder = struct {
     pos: utils.Pos,
     text: []const u8,
     duration_ms: ?i64,
-};
-
-pub const Action = union(enum) {
-    InsertChar: u8,
-    InsertNewLine,
-    DeleteChar,
-    MoveLeft,
-    MoveRight,
-    MoveUp,
-    MoveDown,
-    SetMode: Mode,
-    Append,
-    AppendNewLine,
-    CreatePop: PopBuilder,
-    CommandChar: u8,
-    CommandBackspace,
-    ExecuteCommand,
-    ClearCommandBuf,
-    UpdateDebugBuffer: *buffer.GapBuffer,
-    // SplitView,
-    // GotoView: u8,
-    Quit,
-    Tick,
 };
 
 const builtin = @import("builtin");
@@ -79,77 +64,6 @@ pub const Window = struct {
     }
 };
 
-pub const ActionQueue = struct {
-    buffer: [256]Action = undefined,
-    head: usize = 0,
-    tail: usize = 0,
-
-    pub fn push(self: *ActionQueue, action: Action) CoreError!void {
-        const next_head = (self.head + 1) % self.buffer.len;
-        if (next_head == self.tail)
-            return CoreError.QueueFull;
-        self.buffer[self.head] = action;
-        self.head = next_head;
-    }
-
-    pub fn pop(self: *ActionQueue) ?Action {
-        if (self.head == self.tail) return null; // empty queue
-
-        const action = self.buffer[self.tail];
-        self.tail = (self.tail + 1) % self.buffer.len;
-        return action;
-    }
-
-    pub fn count(self: *ActionQueue) usize {
-        if (self.head >= self.tail) {
-            return self.head - self.tail;
-        } else return self.buffer.len - self.tail + self.head;
-    }
-};
-
-pub const Job = struct {
-    action: Action,
-    interval_ms: i64,
-    last_run: i64,
-};
-
-pub const Scheduler = struct {
-    jobs: [32]?Job = .{null} ** 32,
-
-    pub fn add(self: *Scheduler, action: Action, interval_ms: i64) !void {
-        const now = std.time.milliTimestamp();
-        for (&self.jobs) |*slot| {
-            if (slot.* == null) {
-                slot.* = .{
-                    .action = action,
-                    .interval_ms = interval_ms,
-                    .last_run = now,
-                };
-                return;
-            }
-        }
-        return error.SchedulerFull;
-    }
-
-    pub fn update(self: *Scheduler, queue: *ActionQueue) !void {
-        const now = std.time.milliTimestamp();
-        for (&self.jobs) |*slot| {
-            if (slot.*) |*job| {
-                var catch_up_limit: usize = 0;
-                while (now - job.last_run >= job.interval_ms and catch_up_limit < 10) {
-                    try queue.push(job.action);
-                    job.last_run += job.interval_ms;
-                    catch_up_limit += 1;
-                }
-
-                if (now - job.last_run > job.interval_ms * 10) {
-                    job.last_run = now;
-                }
-            }
-        }
-    }
-};
-
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buffers: std.ArrayList(*buffer.GapBuffer),
@@ -173,6 +87,7 @@ pub const Editor = struct {
     frame_rendered: usize = 0,
     last_fps: usize = 0,
     last_fps_time: i64 = 0,
+    cmd_map: CommandsMap,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -187,6 +102,7 @@ pub const Editor = struct {
             .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
+            .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
         };
@@ -202,6 +118,8 @@ pub const Editor = struct {
             .height = if (ed.win.rows > 0) ed.win.rows - 1 else 0,
             .buf = main_buf,
         });
+
+        try commands.registerBuiltins(&ed.cmd_map);
 
         try ed.scheduler.add(.Tick, 33);
         return ed;
@@ -229,6 +147,7 @@ pub const Editor = struct {
         self.key_binds.deinit();
         self.cmd_buf.deinit(self.allocator);
         self.views.deinit(self.allocator);
+        self.cmd_map.deinit();
     }
 
     pub fn pushAction(self: *Editor, action: Action) !void {
@@ -359,7 +278,7 @@ pub const Editor = struct {
         }
     }
 
-    fn getCurrentBufferIdx(self: *Editor) usize {
+    pub fn getCurrentBufferIdx(self: *Editor) usize {
         const view = self.getActiveView();
 
         var current_buffer_idx: usize = 0;
@@ -393,95 +312,23 @@ pub const Editor = struct {
             self.cmd_buf.clearRetainingCapacity();
         }
 
-        const view = self.getActiveView();
-
         const input = std.mem.trim(u8, self.cmd_buf.items, " \t");
         if (input.len == 0) return;
 
         const space_index = std.mem.indexOfScalar(u8, input, ' ');
 
         const cmd = if (space_index) |idx| self.cmd_buf.items[0..idx] else input;
-        const args = if (space_index) |idx| std.mem.trim(u8, input[idx..], " \t") else "";
+        const args: []const u8 = if (space_index) |idx| std.mem.trim(u8, input[idx..], " \t") else "";
 
-        if (std.mem.eql(u8, cmd, "q")) {
-            self.quit();
-        } else if (std.mem.eql(u8, cmd, "w")) {
-            try self.saveFile();
-            if (self.filename) |filename|
-                try self.registerPop(null, null, filename, null);
-        } else if (std.mem.eql(u8, cmd, "wq")) {
-            try self.saveFile();
-            self.quit();
-        } else if (std.mem.eql(u8, cmd, "top")) {
-            view.buf.jumpTo(.{ .x = 1, .y = 1 });
-        } else if (std.mem.eql(u8, cmd, "file")) {
-            self.loadFile(args);
-        } else if (std.mem.eql(u8, cmd, "split")) {
-            const buf = try self.allocator.create(buffer.GapBuffer);
-            buf.* = try buffer.GapBuffer.init(self.allocator);
-            try self.buffers.append(self.allocator, buf);
-            try self.splitHorizontal(buf);
-        } else if (std.mem.eql(u8, cmd, "vsplit")) {
-            const buf = try self.allocator.create(buffer.GapBuffer);
-            buf.* = try buffer.GapBuffer.init(self.allocator);
-            try self.buffers.append(self.allocator, buf);
-            try self.splitVertical(buf);
-        } else if (std.mem.eql(u8, cmd, "goto") and utils.isDigitSlice(args)) {
-            const idx = try std.fmt.parseInt(usize, args, 10);
-            self.switchView(idx);
-        } else if (std.mem.eql(u8, cmd, "open")) {
-            const content = try fs.Fs.loadFast(self.allocator, args);
-            defer self.allocator.free(content);
-            const new_buf = try self.allocator.create(buffer.GapBuffer);
-            new_buf.* = try buffer.GapBuffer.initFromFile(self.allocator, content);
+        const found = try self.cmd_map.execute(self, cmd, args);
 
-            try self.buffers.append(self.allocator, new_buf);
-            view.buf = new_buf;
-            view.col_offset = 0;
-            view.row_offset = 0;
-            self.filename = args; // need to be reworked
-            self.needs_redraw = true;
-        } else if (std.mem.eql(u8, cmd, "bprev")) {
-            if (self.buffers.items.len <= 1) return;
-
-            const current_buffer_idx = self.getCurrentBufferIdx();
-
-            const prev_idx = if (current_buffer_idx == 0)
-                self.buffers.items.len - 1
-            else
-                current_buffer_idx - 1;
-
-            view.buf = self.buffers.items[prev_idx];
-            view.col_offset = 0;
-            view.row_offset = 0;
-            self.needs_redraw = true;
-        } else if (std.mem.eql(u8, cmd, "bnext")) {
-            if (self.buffers.items.len <= 1) return;
-            const current_buffer_idx = self.getCurrentBufferIdx();
-
-            const next_idx = (current_buffer_idx + 1) % self.buffers.items.len;
-
-            view.buf = self.buffers.items[next_idx];
-            view.col_offset = 0;
-            view.row_offset = 0;
-            self.needs_redraw = true;
-        } else if (std.mem.eql(u8, cmd, "debug")) {
-            if (self.debug_view_idx == null) {
-                const buf = try self.allocator.create(buffer.GapBuffer);
-                buf.* = try buffer.GapBuffer.init(self.allocator);
-                try self.buffers.append(self.allocator, buf);
-
-                try self.splitVertical(buf);
-
-                const new_idx = self.views.items.len - 1;
-                self.views.items[new_idx].is_readonly = true;
-                self.debug_view_idx = new_idx;
-                try self.scheduler.add(.{ .UpdateDebugBuffer = buf }, 100);
-                self.needs_redraw = true;
+        if (!found) {
+            if (utils.isDigitSlice(cmd)) {
+                const l = try std.fmt.parseInt(usize, cmd, 10);
+                self.getActiveView().buf.jumpTo(.{ .x = 1, .y = l });
+            } else {
+                try self.registerPop(null, null, "Unknown command", 2000);
             }
-        } else if (utils.isDigitSlice(cmd)) {
-            const l = try std.fmt.parseInt(usize, self.cmd_buf.items, 10);
-            view.buf.jumpTo(.{ .x = 1, .y = l });
         }
     }
 
@@ -580,7 +427,7 @@ pub const Editor = struct {
         self.needs_redraw = true;
     }
 
-    fn switchView(self: *Editor, idx: usize) void {
+    pub fn switchView(self: *Editor, idx: usize) void {
         if (idx < self.views.items.len) {
             self.active_view_idx = idx;
             self.needs_redraw = true;
