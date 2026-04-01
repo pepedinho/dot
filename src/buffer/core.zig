@@ -139,7 +139,7 @@ pub const Scheduler = struct {
                 while (now - job.last_run >= job.interval_ms and catch_up_limit < 10) {
                     try queue.push(job.action);
                     job.last_run += job.interval_ms;
-                    catch_up_limit += 10;
+                    catch_up_limit += 1;
                 }
 
                 if (now - job.last_run > job.interval_ms * 10) {
@@ -169,7 +169,7 @@ pub const Editor = struct {
     action_queue: ActionQueue = .{},
     scheduler: Scheduler = .{},
     debug_view_idx: ?usize = null,
-    // for fps counte
+    // for fps counter
     frame_rendered: usize = 0,
     last_fps: usize = 0,
     last_fps_time: i64 = 0,

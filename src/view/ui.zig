@@ -71,14 +71,7 @@ fn renderView(stdout: *std.Io.Writer, view: *View) !void {
     view.is_dirty = false;
 }
 
-pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
-    try stdout.writeAll(ansi.hide_cursor);
-    try stdout.writeAll(ansi.clear_screen);
-
-    for (editor.views.items) |*view| {
-        try renderView(stdout, view);
-    }
-
+fn traceBorder(stdout: *std.Io.Writer, editor: *Editor) !void {
     if (editor.views.items.len > 1) {
         try stdout.writeAll("\x1b[38;5;240m");
 
@@ -102,8 +95,19 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
                 try stdout.writeAll("┼");
             }
         }
-        try stdout.writeAll("\x1b[0m"); // Reset de la couleur
+        try stdout.writeAll("\x1b[0m");
     }
+}
+
+pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
+    try stdout.writeAll(ansi.hide_cursor);
+    try stdout.writeAll(ansi.clear_screen);
+
+    for (editor.views.items) |*view| {
+        try renderView(stdout, view);
+    }
+
+    try traceBorder(stdout, editor);
 
     const view = editor.getActiveView();
 
@@ -146,6 +150,9 @@ pub fn refreshDirtyViews(stdout: *std.Io.Writer, editor: *Editor) !void {
         if (view.is_dirty)
             try renderView(stdout, view);
     }
+
+    try traceBorder(stdout, editor);
+    try displayMode(stdout, editor);
     try editor.renderAllPopup(stdout);
 
     const view = editor.getActiveView();
