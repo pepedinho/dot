@@ -8,6 +8,7 @@ const Editor = core.Editor;
 
 const cmdHandler = *const fn (editor: *Editor, args: []const u8) anyerror!void;
 
+/// A easy to use api to manipul Command map and execute them
 pub const CommandsMap = struct {
     map: std.StringArrayHashMap(cmdHandler),
 
