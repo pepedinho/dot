@@ -64,26 +64,48 @@ pub const Window = struct {
     }
 };
 
+/// Provide an API to interact with the editor
+/// the role of this struct is to centralize all vital function of dot editor
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buffers: std.ArrayList(*buffer.GapBuffer),
     views: std.ArrayList(pane.View),
     active_view_idx: usize = 0,
     mode: Mode,
+    /// This attribut is used like memory for temporary mode like `.Command`
     last_mode: Mode,
     is_running: bool,
+    /// If this flag is true the editor will process a full redraw in the next frame
     needs_redraw: bool,
+    /// Tell the rendering engine that something has change.
+    /// The engine will then apply the apporiate rendering level based on the change
     is_dirty: bool = true,
+    /// Used for store and follow the terminal window size
     win: Window,
+    /// Store the command line input
     cmd_buf: std.ArrayListUnmanaged(u8),
+    //FIXME: filename has to be an array because we can have
+    //  multiple buffers/views
+    /// The file associated to current buffer/window ()
     filename: ?[]const u8,
+    /// This is used to store `Pop`
+    /// Is map to store multiple active Pops by their unique ID.
+    /// With different lifetime and attributs
     pop_store: std.AutoHashMap(u32, pop.Pop),
+    /// Used to increment id for assign
     next_popup_id: u32 = 1,
+    /// Store keybinds and theirs associated Action
     key_binds: std.AutoHashMap(u8, Action),
+    /// Ring buffer to store up 256 `Action`
     action_queue: ActionQueue = .{},
+    /// Used to assign reccurent action to scheduler
     scheduler: Scheduler = .{},
+    // ========================
+    // Debug Part
+    // ========================
+    // TODO: create a dedicated struct
     debug_view_idx: ?usize = null,
-    // for fps counter
+    // For fps counter
     frame_rendered: usize = 0,
     last_fps: usize = 0,
     last_fps_time: i64 = 0,
@@ -120,15 +142,16 @@ pub const Editor = struct {
         });
 
         try commands.registerBuiltins(&ed.cmd_map);
-
         try ed.scheduler.add(.Tick, 33);
         return ed;
     }
 
+    /// Return the `View` at index 'active_view_idx'
     pub fn getActiveView(self: *Editor) *pane.View {
         return &self.views.items[self.active_view_idx];
     }
 
+    /// Store builtin keybind in `self.keybinds` map
     pub fn loadStandardKeyBinds(self: *Editor) !void {
         try keybinds.loadStandardKeyBinds(self);
     }
@@ -150,10 +173,12 @@ pub const Editor = struct {
         self.cmd_map.deinit();
     }
 
+    /// Push action in the `Editor.action_queue`
     pub fn pushAction(self: *Editor, action: Action) !void {
         try self.action_queue.push(action);
     }
 
+    /// Just change filename pointer to the filename param provided
     pub fn loadFile(self: *Editor, filename: []const u8) void {
         self.filename = filename;
     }
@@ -162,10 +187,12 @@ pub const Editor = struct {
         self.is_running = false;
     }
 
+    /// Store a new keybind in `self.key_binds`
     pub fn registerKeyBind(self: *Editor, key: u8, action: Action) !void {
         try self.key_binds.put(key, action);
     }
 
+    /// Applies the logic associated with an `Action`
     pub fn execute(self: *Editor, action: Action) !void {
         const view = self.getActiveView();
         switch (action) {
@@ -278,6 +305,7 @@ pub const Editor = struct {
         }
     }
 
+    /// Return the buffer index associated with the current view
     pub fn getCurrentBufferIdx(self: *Editor) usize {
         const view = self.getActiveView();
 
@@ -291,6 +319,11 @@ pub const Editor = struct {
         return current_buffer_idx;
     }
 
+    /// Create and store a new `Pop` with the param given
+    /// pos: the position of the pop on the screen (default middle)
+    /// size: the size (width/height) of the pop
+    /// text: the content of the pop
+    /// duration_ms: the lifespan of the Pop (default: 2000)
     pub fn registerPop(self: *Editor, pos: ?utils.Pos, size: ?utils.Pos, text: []const u8, duration: ?u32) !void {
         const w_s = self.win;
         const popup = PopBuilder{
@@ -306,6 +339,8 @@ pub const Editor = struct {
         self.needs_redraw = true;
     }
 
+    /// Parse `self.cmd_buf` call cmd_map handler if it exist
+    /// clean `cmd_buf` and switch `self.mode` to `self.last_mode`
     fn executeCmd(self: *Editor) !void {
         defer {
             self.mode = self.last_mode;
