@@ -35,8 +35,10 @@ pub const GapBuffer = struct {
 
     /// Initializes a Gap Buffer loaded with predefined text.
     /// The gap is placed exactly after the provided text, ready for appending.
-    /// NOTE: This function duplicate the `filename` param and don't free it,
-    /// It is your responsibility to free it afterward if it is allocated on the heap.
+    ///
+    /// Note: This function creates its own internal copy of `filename`.
+    /// The caller retains ownership of the passed `filename` argument and is
+    /// responsible for freeing it if it was dynamically allocated.
     pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8, filename: []const u8) !GapBuffer {
         const total_capacity = text.len + INITIAL_CAPACITY;
         const name = try allocator.dupe(u8, filename);
