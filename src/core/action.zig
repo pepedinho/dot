@@ -1,6 +1,9 @@
 const core = @import("core.zig");
 const buffer = @import("gap.zig");
 
+/// Action who can be done by editor executor
+/// you can combinate Action to create other action,
+/// they will be executed sequencialy in the editor loop
 pub const Action = union(enum) {
     InsertChar: u8,
     InsertNewLine,
@@ -24,6 +27,7 @@ pub const Action = union(enum) {
     Tick,
 };
 
+/// ActionQueue is the Action constainer that the `Scheduler` use to store Action in a ring stack-allocatd buffer
 pub const ActionQueue = struct {
     buffer: [256]Action = undefined,
     head: usize = 0,

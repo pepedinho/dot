@@ -1,3 +1,5 @@
+//! Core module it contain `Editor` struct which is the interface to interact with the dot editor
+
 const std = @import("std");
 const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
@@ -27,6 +29,7 @@ pub const Mode = enum {
     Command,
 };
 
+/// a utiliti structure to create a `Pop`
 pub const PopBuilder = struct {
     size: utils.Pos,
     pos: utils.Pos,
@@ -38,6 +41,7 @@ const builtin = @import("builtin");
 
 const TIOCGWINSZ = if (builtin.os.tag == .macos) 0x40087468 else 0x5413;
 
+/// `Window` struct is used to represent the whole terminal window
 pub const Window = struct {
     rows: u16,
     cols: u16,
@@ -64,26 +68,48 @@ pub const Window = struct {
     }
 };
 
+/// Provide an API to interact with the editor
+/// the role of this struct is to centralize all vital function of dot editor
 pub const Editor = struct {
     allocator: std.mem.Allocator,
     buffers: std.ArrayList(*buffer.GapBuffer),
     views: std.ArrayList(pane.View),
     active_view_idx: usize = 0,
     mode: Mode,
+    /// This attribut is used like memory for temporary mode like `.Command`
     last_mode: Mode,
     is_running: bool,
+    /// If this flag is true the editor will process a full redraw in the next frame
     needs_redraw: bool,
+    /// Tell the rendering engine that something has change.
+    /// The engine will then apply the apporiate rendering level based on the change
     is_dirty: bool = true,
+    /// Used for store and follow the terminal window size
     win: Window,
+    /// Store the command line input
     cmd_buf: std.ArrayListUnmanaged(u8),
+    //FIXME: filename has to be an array because we can have
+    //  multiple buffers/views
+    /// The file associated to current buffer/window ()
     filename: ?[]const u8,
+    /// This is used to store `Pop`
+    /// Is map to store multiple active Pops by their unique ID.
+    /// With different lifetime and attributs
     pop_store: std.AutoHashMap(u32, pop.Pop),
+    /// Used to increment id for assign
     next_popup_id: u32 = 1,
+    /// Store keybinds and theirs associated Action
     key_binds: std.AutoHashMap(u8, Action),
+    /// Ring buffer to store up 256 `Action`
     action_queue: ActionQueue = .{},
+    /// Used to assign reccurent action to scheduler
     scheduler: Scheduler = .{},
+    // ========================
+    // Debug Part
+    // ========================
+    // TODO: create a dedicated struct
     debug_view_idx: ?usize = null,
-    // for fps counter
+    // For fps counter
     frame_rendered: usize = 0,
     last_fps: usize = 0,
     last_fps_time: i64 = 0,
@@ -120,15 +146,16 @@ pub const Editor = struct {
         });
 
         try commands.registerBuiltins(&ed.cmd_map);
-
         try ed.scheduler.add(.Tick, 33);
         return ed;
     }
 
+    /// Return the `View` at index 'active_view_idx'
     pub fn getActiveView(self: *Editor) *pane.View {
         return &self.views.items[self.active_view_idx];
     }
 
+    /// Store builtin keybind in `self.keybinds` map
     pub fn loadStandardKeyBinds(self: *Editor) !void {
         try keybinds.loadStandardKeyBinds(self);
     }
@@ -150,10 +177,12 @@ pub const Editor = struct {
         self.cmd_map.deinit();
     }
 
+    /// Push action in the `Editor.action_queue`
     pub fn pushAction(self: *Editor, action: Action) !void {
         try self.action_queue.push(action);
     }
 
+    /// Just change filename pointer to the filename param provided
     pub fn loadFile(self: *Editor, filename: []const u8) void {
         self.filename = filename;
     }
@@ -162,10 +191,12 @@ pub const Editor = struct {
         self.is_running = false;
     }
 
+    /// Store a new keybind in `self.key_binds`
     pub fn registerKeyBind(self: *Editor, key: u8, action: Action) !void {
         try self.key_binds.put(key, action);
     }
 
+    /// Applies the logic associated with an `Action`
     pub fn execute(self: *Editor, action: Action) !void {
         const view = self.getActiveView();
         switch (action) {
@@ -278,6 +309,7 @@ pub const Editor = struct {
         }
     }
 
+    /// Return the buffer index associated with the current view
     pub fn getCurrentBufferIdx(self: *Editor) usize {
         const view = self.getActiveView();
 
@@ -291,6 +323,11 @@ pub const Editor = struct {
         return current_buffer_idx;
     }
 
+    /// Create and store a new `Pop` with the param given and order to render it
+    /// pos: the position of the pop on the screen (default middle)
+    /// size: the size (width/height) of the pop
+    /// text: the content of the pop
+    /// duration_ms: the lifespan of the Pop (default: 2000)
     pub fn registerPop(self: *Editor, pos: ?utils.Pos, size: ?utils.Pos, text: []const u8, duration: ?u32) !void {
         const w_s = self.win;
         const popup = PopBuilder{
@@ -306,6 +343,8 @@ pub const Editor = struct {
         self.needs_redraw = true;
     }
 
+    /// Parse `self.cmd_buf` call cmd_map handler if it exist
+    /// clean `cmd_buf` and switch `self.mode` to `self.last_mode`
     fn executeCmd(self: *Editor) !void {
         defer {
             self.mode = self.last_mode;
@@ -332,6 +371,7 @@ pub const Editor = struct {
         }
     }
 
+    /// Create `Pop` like a .init() but assign id and store it to the pop_store
     pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) !u32 {
         const id = self.next_popup_id;
         self.next_popup_id += 1;
@@ -341,6 +381,7 @@ pub const Editor = struct {
         return id;
     }
 
+    /// Deinit all `Pop` in `self.pop_store`
     pub fn destroyPop(self: *Editor, id: u32) void {
         if (self.pop_store.fetchRemove(id)) |kv| {
             var popup = kv.value;
@@ -348,6 +389,7 @@ pub const Editor = struct {
         }
     }
 
+    /// Render all `self.pop_store` popup to the screen
     pub fn renderAllPopup(
         self: *Editor,
         out: *std.Io.Writer,
@@ -360,6 +402,9 @@ pub const Editor = struct {
         // try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
     }
 
+    //FIXME: In the next refactor filename fiedl will be moved in buffer.Gap
+    //       so this function will save current buffer as `self.buf.filename` instead of `self.filename`
+    /// Save current buffer as `self.filename`
     pub fn saveFile(self: *Editor) !void {
         const name = self.filename orelse {
             return try self.registerPop(null, null, "No file name", 3000);
@@ -376,6 +421,7 @@ pub const Editor = struct {
         try file.writeAll(view.buf.getSecond());
     }
 
+    /// Split current window horizontaly in two equal parts
     pub fn splitHorizontal(self: *Editor, target_buf: *buffer.GapBuffer) !void {
         const active_idx = self.active_view_idx;
 
@@ -402,6 +448,7 @@ pub const Editor = struct {
         self.needs_redraw = true;
     }
 
+    /// Split current window verticaly in two equal parts
     pub fn splitVertical(self: *Editor, target_buf: *buffer.GapBuffer) !void {
         const active_idx = self.active_view_idx;
 
@@ -427,6 +474,8 @@ pub const Editor = struct {
         self.needs_redraw = true;
     }
 
+    /// Change `self.active_view_idx` to `idx` param
+    /// if `idx` is out of bounds this function does nothing
     pub fn switchView(self: *Editor, idx: usize) void {
         if (idx < self.views.items.len) {
             self.active_view_idx = idx;
@@ -434,6 +483,10 @@ pub const Editor = struct {
         }
     }
 
+    /// Main editor loop used to:
+    /// - read user input
+    /// - draw screen
+    /// - update scheduler
     pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
         while (self.is_running) {
             if (self.is_dirty) {
@@ -522,6 +575,7 @@ pub const Editor = struct {
         }
     }
 
+    /// Fetch debug infos and format them then inject it in `debug_buf` end render it in `v` view.
     fn updateDebugPanel(self: *Editor, debug_buf: *buffer.GapBuffer, v: *pane.View) !void {
         debug_buf.gap_start = 0;
         debug_buf.gap_end = debug_buf.buffer.len;

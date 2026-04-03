@@ -8,6 +8,10 @@ const View = @import("../core/pane.zig").View;
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
 const MODE_COLOR = [_][]const u8{ "\x1b[0;106m", "\x1b[0;102m", "\x1b[0;101m" };
 
+/// Draws the contents of a specific `View` onto the terminal.
+/// This function translates the logical text from the GapBuffer into physical
+/// terminal characters, taking into account scroll offsets (camera position),
+/// tab expansions, and the strict boundaries of the viewport (clipping).
 fn renderView(stdout: *std.Io.Writer, view: *View) !void {
     const part1 = view.buf.getFirst();
     const part2 = view.buf.getSecond();
@@ -25,7 +29,7 @@ fn renderView(stdout: *std.Io.Writer, view: *View) !void {
     const parts = [_][]const u8{ part1, part2 };
     for (parts) |part| {
         for (part) |c| {
-            if (screen_row > max_rows) break;
+            if (screen_row > max_rows) break; // Stop drawing if we exceed the view's height
 
             if (c == '\n') {
                 if (current_row > view.row_offset) {
@@ -38,6 +42,7 @@ fn renderView(stdout: *std.Io.Writer, view: *View) !void {
                 current_row += 1;
                 current_col = 1;
             } else if (c == '\t') {
+                // Expand physical tabs into visual spaces
                 const TAB_SIZE = 8;
                 for (0..TAB_SIZE) |_| {
                     if (current_row > view.row_offset) {
@@ -48,6 +53,7 @@ fn renderView(stdout: *std.Io.Writer, view: *View) !void {
                     current_col += 1;
                 }
             } else {
+                // Draw normal characters if they fall within the camera's bounds
                 if (current_row > view.row_offset) {
                     if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                         try stdout.writeAll(&[_]u8{c});
@@ -58,11 +64,13 @@ fn renderView(stdout: *std.Io.Writer, view: *View) !void {
         }
     }
 
+    // Clear the remainder of the last drawn line
     if (screen_row <= max_rows) {
         try stdout.writeAll(clear_to_eol);
         screen_row += 1;
     }
 
+    // Fill the rest of the empty viewport with blank lines
     while (screen_row <= max_rows) : (screen_row += 1) {
         try ansi.goto(stdout, screen_row, view.x);
         try stdout.writeAll(clear_to_eol);
@@ -71,6 +79,7 @@ fn renderView(stdout: *std.Io.Writer, view: *View) !void {
     view.is_dirty = false;
 }
 
+/// Draws visual separation lines (borders) between multiple views.
 fn traceBorder(stdout: *std.Io.Writer, editor: *Editor) !void {
     if (editor.views.items.len > 1) {
         try stdout.writeAll("\x1b[38;5;240m");
@@ -99,6 +108,9 @@ fn traceBorder(stdout: *std.Io.Writer, editor: *Editor) !void {
     }
 }
 
+/// Rendering Speed 1: Full Screen Redraw.
+/// Wipes the entire terminal and redraws every view, border, and UI element from scratch.
+/// Used for major state changes (e.g., resizing the terminal, splitting windows).
 pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.hide_cursor);
     try stdout.writeAll(ansi.clear_screen);
@@ -127,22 +139,9 @@ pub fn refreshScreen(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.show_cursor);
 }
 
-fn writeWithCTRLF(stdout: *std.Io.Writer, text: []const u8) !void {
-    var start: usize = 0;
-
-    for (text, 0..) |c, i| {
-        if (c == '\n') {
-            try stdout.writeAll(text[start..i]);
-            try stdout.writeAll("\r\n");
-            start = i + 1;
-        }
-    }
-
-    if (start < text.len) {
-        try stdout.writeAll(text[start..text.len]);
-    }
-}
-
+/// Rendering Speed 2: Targeted View Redraw (Dirty Rectangles).
+/// Only redraws views that have explicitly requested an update (view.is_dirty = true).
+/// Crucial for asynchronous updates (like the Debug Panel) to prevent the rest of the screen from flickering.
 pub fn refreshDirtyViews(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.hide_cursor);
 
@@ -168,6 +167,9 @@ pub fn refreshDirtyViews(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.show_cursor);
 }
 
+/// Rendering Speed 3: Micro Redraw (Active Line Only).
+/// The fastest rendering path. Used when the user is simply typing text.
+/// It exclusively scans and redraws the physical characters on the active logical line.
 pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     if (editor.mode == .Command) return;
     const buf = editor.getActiveView().buf;
@@ -238,6 +240,7 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.show_cursor);
 }
 
+/// Renders the global status line at the bottom of the screen (Mode indicator).
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
     const win = editor.win;
 
@@ -252,6 +255,8 @@ pub fn insertLine(stdout: *std.Io.Writer, text: []const u8, row: usize) !void {
     try stdout.print("{s}\x1b[m", .{text});
 }
 
+/// Renders the interactive command prompt at the bottom of the screen.
+/// Fills the remaining width with background color for a polished look.
 pub fn commandPrompt(stdout: *std.Io.Writer, editor: *Editor) !void {
     const row = editor.win.rows;
     const text = editor.cmd_buf.items;

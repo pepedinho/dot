@@ -3,14 +3,22 @@ const utils = @import("../utils.zig");
 
 const TAB_SIZE: usize = 8;
 
+/// Gap buffer implementation
 pub const GapBuffer = struct {
     allocator: std.mem.Allocator,
     buffer: []u8,
+    /// The physical index representing the start of the gap.
+    /// This also corresponds to the logical position of the cursor.
+    /// All characters from `buffer[0..gap_start]` are the text BEFORE the cursor
     gap_start: usize,
+    /// The physical index representing the end of the gap.
+    /// All characters from `buffer[gap_end..buffer.len]` are the text AFTER the cursor.
     gap_end: usize,
 
     const INITIAL_CAPACITY = 1024;
 
+    /// Initializes an empty Gap Buffer with an initial capacity.
+    /// The gap spans the entire buffer initially.
     pub fn init(allocator: std.mem.Allocator) !GapBuffer {
         const buf = try allocator.alloc(u8, INITIAL_CAPACITY);
         @memset(buf, 0);
@@ -22,6 +30,8 @@ pub const GapBuffer = struct {
         };
     }
 
+    /// Initializes a Gap Buffer loaded with predefined text.
+    /// The gap is placed exactly after the provided text, ready for appending.
     pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8) !GapBuffer {
         const total_capacity = text.len + INITIAL_CAPACITY;
         const buf = try allocator.alloc(u8, total_capacity);
@@ -37,6 +47,8 @@ pub const GapBuffer = struct {
         };
     }
 
+    /// Doubles the physical capacity of the buffer when the gap is exhausted.
+    /// This requires allocating a new block, copying the left part, and moving the right part to the end.
     fn expand(self: *GapBuffer) !void {
         const new_capacity = self.buffer.len * 2;
         const buf = try self.allocator.alloc(u8, new_capacity);
@@ -56,6 +68,8 @@ pub const GapBuffer = struct {
         self.allocator.free(self.buffer);
     }
 
+    /// Moves the cursor (and the gap) one character to the left.
+    /// This physically takes the character just before the gap and copies it to the end of the gap.
     pub fn moveCursorLeft(self: *GapBuffer) void {
         if (self.gap_start > 0) {
             self.gap_start -= 1;
@@ -64,6 +78,8 @@ pub const GapBuffer = struct {
         }
     }
 
+    /// Moves the cursor (and the gap) one character to the right.
+    /// This physically takes the character just after the gap and copies it to the start of the gap.
     pub fn moveCursorRight(self: *GapBuffer) void {
         if (self.gap_end < self.buffer.len) {
             self.buffer[self.gap_start] = self.buffer[self.gap_end];
@@ -110,6 +126,8 @@ pub const GapBuffer = struct {
         }
     }
 
+    /// Inserts a character exactly at the cursor's logical position in O(1) time.
+    /// Consumes one byte of the gap. Expands the buffer if the gap is empty.
     pub fn insertChar(self: *GapBuffer, char: u8) !void {
         if (self.gap_start == self.gap_end) {
             try self.expand();
@@ -119,6 +137,8 @@ pub const GapBuffer = struct {
         self.gap_start += 1;
     }
 
+    /// Removes the character immediately preceding the cursor in O(1) time.
+    /// This simply expands the gap backwards by one byte.
     pub fn backspace(self: *GapBuffer) void {
         if (self.gap_start > 0) {
             self.gap_start -= 1;
@@ -134,14 +154,18 @@ pub const GapBuffer = struct {
         });
     }
 
+    /// Returns a slice pointing to the text physically located BEFORE the cursor.
     pub fn getFirst(self: *GapBuffer) []u8 {
         return self.buffer[0..self.gap_start];
     }
 
+    /// Returns a slice pointing to the text physically located AFTER the cursor.
     pub fn getSecond(self: *GapBuffer) []u8 {
         return self.buffer[self.gap_end..self.buffer.len];
     }
 
+    /// Calculates the 2D logical position (x, y) of the cursor by iterating
+    /// through the left part of the buffer and counting newlines and tabs.
     pub fn getCursorPos(self: *GapBuffer) struct { x: usize, y: usize } {
         var x: usize = 1;
         var y: usize = 1;
@@ -160,6 +184,9 @@ pub const GapBuffer = struct {
         return .{ .y = y, .x = x };
     }
 
+    /// Moves the gap to an arbitrary (x, y) logical coordinate.
+    /// This translates the logical 2D coordinate into a physical array index,
+    /// and shifts the gap by copying blocks of memory.
     pub fn jumpTo(self: *GapBuffer, pos: utils.Pos) void {
         const gap_size = self.gap_end - self.gap_start;
         const logical_len = self.buffer.len - gap_size;
