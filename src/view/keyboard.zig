@@ -12,6 +12,11 @@ pub const Key = union(enum) {
     none,
 };
 
+/// Reads a single keystroke from standard input (stdin) in raw (non-blocking) mode.
+/// This function handles standard ASCII characters as well as multi-byte
+/// ANSI escape sequences (such as arrow keys).
+///
+/// Returns `.none` if no character is currently available in the buffer.
 pub fn readKey() !Key {
     var buf: [1]u8 = undefined;
 
