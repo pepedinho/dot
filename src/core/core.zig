@@ -177,7 +177,9 @@ pub const Editor = struct {
         try self.action_queue.push(action);
     }
 
-    /// Just change filename pointer to the filename param provided
+    /// Duplicate the filename param and store it in the .filename field
+    /// of the current buffer (buffers associated to the current window)
+    /// NOTE: if buffer.filename is not null this function free it to avoid leaks
     pub fn loadFile(self: *Editor, filename: []const u8) !void {
         const name = try self.allocator.dupe(u8, filename);
         const buf_idx = self.getCurrentBufferIdx();
