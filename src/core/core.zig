@@ -181,8 +181,9 @@ pub const Editor = struct {
     /// of the current buffer (buffers associated to the current window)
     /// NOTE: if buffer.filename is not null this function free it to avoid leaks
     pub fn loadFile(self: *Editor, filename: []const u8) !void {
-        const name = try self.allocator.dupe(u8, filename);
         const buf_idx = self.getCurrentBufferIdx();
+        const buf = self.buffers.items[buf_idx];
+        const name = try buf.allocator.dupe(u8, filename);
         if (self.buffers.items[buf_idx].filename) |f| {
             self.allocator.free(f);
         }
@@ -405,7 +406,7 @@ pub const Editor = struct {
     }
 
     /// Save current buffer as associated buffer filename
-    /// if `buffers[current].filename` is null display a error popup
+    /// if `buffers[current].filename` is null display an error popup
     pub fn saveFile(self: *Editor) !void {
         const current_buf_idx = self.getCurrentBufferIdx();
         const buf = self.buffers.items[current_buf_idx];

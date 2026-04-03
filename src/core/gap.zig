@@ -40,6 +40,7 @@ pub const GapBuffer = struct {
     pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8, filename: []const u8) !GapBuffer {
         const total_capacity = text.len + INITIAL_CAPACITY;
         const name = try allocator.dupe(u8, filename);
+        errdefer allocator.free(name);
         const buf = try allocator.alloc(u8, total_capacity);
 
         @memcpy(buf[0..text.len], text);
