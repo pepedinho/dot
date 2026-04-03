@@ -181,6 +181,9 @@ pub const Editor = struct {
     pub fn loadFile(self: *Editor, filename: []const u8) !void {
         const name = try self.allocator.dupe(u8, filename);
         const buf_idx = self.getCurrentBufferIdx();
+        if (self.buffers.items[buf_idx].filename) |f| {
+            self.allocator.free(f);
+        }
         self.buffers.items[buf_idx].filename = name;
     }
 
