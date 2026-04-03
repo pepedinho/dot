@@ -96,7 +96,6 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
 
     const new_buf = try ed.allocator.create(buffer.GapBuffer);
     new_buf.* = try buffer.GapBuffer.initFromFile(ed.allocator, content, args);
-    new_buf.filename = args;
 
     try ed.buffers.append(ed.allocator, new_buf);
 
