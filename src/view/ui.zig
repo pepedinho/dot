@@ -240,13 +240,36 @@ pub fn updateCurrentLine(stdout: *std.Io.Writer, editor: *Editor) !void {
     try stdout.writeAll(ansi.show_cursor);
 }
 
+const style = @import("style.zig");
+
 /// Renders the global status line at the bottom of the screen (Mode indicator).
 pub fn displayMode(stdout: *std.Io.Writer, editor: *Editor) !void {
-    const win = editor.win;
-
-    try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
     const mode = @intFromEnum(editor.mode);
-    try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
+    const win = editor.win;
+    try stdout.print("\x1b[{d};1H\x1b[2K", .{win.rows});
+
+    var status_line = style.Line.init(editor.allocator);
+    defer status_line.deinit();
+
+    const mode_bg = switch (editor.mode) {
+        .Normal => style.Color.Cyan,
+        .Insert => style.Color.Green,
+        .Command => style.Color.Red,
+    };
+
+    try status_line.addSpan(style.Span.init(MODE[mode], .{ .bg = mode_bg, .fg = .Black, .bold = true }));
+
+    try status_line.addText(" | ");
+
+    const buf_idx = editor.getCurrentBufferIdx();
+    if (editor.buffers.items[buf_idx].filename) |f| {
+        try status_line.addSpan(style.Span.init(f, .{ .fg = .Yellow }));
+    } else {
+        try status_line.addSpan(style.Span.init("[No Name]", .{ .italic = true }));
+    }
+    try status_line.render(stdout);
+    // const mode = @intFromEnum(editor.mode);
+    // try stdout.print("{s} {s} \x1b[m", .{ MODE_COLOR[mode], MODE[mode] });
 }
 
 pub fn insertLine(stdout: *std.Io.Writer, text: []const u8, row: usize) !void {
