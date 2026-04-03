@@ -88,10 +88,6 @@ pub const Editor = struct {
     win: Window,
     /// Store the command line input
     cmd_buf: std.ArrayListUnmanaged(u8),
-    //FIXME: filename has to be an array because we can have
-    //  multiple buffers/views
-    /// The file associated to current buffer/window ()
-    filename: ?[]const u8,
     /// This is used to store `Pop`
     /// Is map to store multiple active Pops by their unique ID.
     /// With different lifetime and attributs
@@ -125,7 +121,6 @@ pub const Editor = struct {
             .needs_redraw = true,
             .win = try Window.init(),
             .cmd_buf = .empty,
-            .filename = null,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = std.AutoHashMap(u8, Action).init(allocator),
             .cmd_map = CommandsMap.init(allocator),
@@ -183,8 +178,10 @@ pub const Editor = struct {
     }
 
     /// Just change filename pointer to the filename param provided
-    pub fn loadFile(self: *Editor, filename: []const u8) void {
-        self.filename = filename;
+    pub fn loadFile(self: *Editor, filename: []const u8) !void {
+        const name = try self.allocator.dupe(u8, filename);
+        const buf_idx = self.getCurrentBufferIdx();
+        self.buffers.items[buf_idx].filename = name;
     }
 
     pub fn quit(self: *Editor) void {
@@ -402,11 +399,12 @@ pub const Editor = struct {
         // try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
     }
 
-    //FIXME: In the next refactor filename fiedl will be moved in buffer.Gap
-    //       so this function will save current buffer as `self.buf.filename` instead of `self.filename`
-    /// Save current buffer as `self.filename`
+    /// Save current buffer as associated buffer filename
+    /// if `buffers[current].filename` is null display a error popup
     pub fn saveFile(self: *Editor) !void {
-        const name = self.filename orelse {
+        const current_buf_idx = self.getCurrentBufferIdx();
+        const buf = self.buffers.items[current_buf_idx];
+        const name = buf.filename orelse {
             return try self.registerPop(null, null, "No file name", 3000);
         };
         const view = self.getActiveView();
@@ -592,6 +590,7 @@ pub const Editor = struct {
         for (self.buffers.items, 0..) |b, i| {
             const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
             w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
+            w.print("\tfilename -> {s}\n", .{if (b.filename) |f| f else "none"}) catch {};
         }
         w.print("\n", .{}) catch {};
 

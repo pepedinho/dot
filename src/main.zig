@@ -37,13 +37,13 @@ pub fn main() !void {
     defer args.deinit();
     _ = args.next();
     if (args.next()) |filename| {
-        dot.loadFile(filename);
+        try dot.loadFile(filename);
 
         if (Fs.loadFast(dot.allocator, filename)) |file_content| {
             defer allocator.free(file_content);
             const active_buf = dot.getActiveView().buf;
             active_buf.deinit();
-            active_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, file_content);
+            active_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, file_content, filename);
         } else |err| {
             if (err != error.FileNotFound) {
                 return err;
