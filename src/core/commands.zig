@@ -47,7 +47,8 @@ fn cmdQ(ed: *Editor, args: []const u8) !void {
 fn cmdW(ed: *Editor, args: []const u8) !void {
     _ = args;
     try ed.saveFile();
-    if (ed.filename) |filename|
+    const current_buf_idx = ed.getCurrentBufferIdx();
+    if (ed.buffers.items[current_buf_idx].filename) |filename|
         try ed.registerPop(null, null, filename, null);
 }
 
@@ -63,7 +64,7 @@ fn cmdTop(ed: *Editor, args: []const u8) !void {
 }
 
 fn cmdFile(ed: *Editor, args: []const u8) !void {
-    ed.loadFile(args);
+    try ed.loadFile(args);
 }
 
 fn cmdSplit(ed: *Editor, args: []const u8) !void {
@@ -94,7 +95,7 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
     defer ed.allocator.free(content);
 
     const new_buf = try ed.allocator.create(buffer.GapBuffer);
-    new_buf.* = try buffer.GapBuffer.initFromFile(ed.allocator, content);
+    new_buf.* = try buffer.GapBuffer.initFromFile(ed.allocator, content, args);
 
     try ed.buffers.append(ed.allocator, new_buf);
 
@@ -103,7 +104,6 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
     view.col_offset = 0;
     view.row_offset = 0;
 
-    ed.filename = args;
     ed.needs_redraw = true;
 }
 

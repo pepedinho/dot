@@ -14,6 +14,8 @@ pub const GapBuffer = struct {
     /// The physical index representing the end of the gap.
     /// All characters from `buffer[gap_end..buffer.len]` are the text AFTER the cursor.
     gap_end: usize,
+    /// associated filename
+    filename: ?[]const u8,
 
     const INITIAL_CAPACITY = 1024;
 
@@ -27,13 +29,20 @@ pub const GapBuffer = struct {
             .buffer = buf,
             .gap_start = 0,
             .gap_end = buf.len,
+            .filename = null,
         };
     }
 
     /// Initializes a Gap Buffer loaded with predefined text.
     /// The gap is placed exactly after the provided text, ready for appending.
-    pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8) !GapBuffer {
+    ///
+    /// Note: This function creates its own internal copy of `filename`.
+    /// The caller retains ownership of the passed `filename` argument and is
+    /// responsible for freeing it if it was dynamically allocated.
+    pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8, filename: []const u8) !GapBuffer {
         const total_capacity = text.len + INITIAL_CAPACITY;
+        const name = try allocator.dupe(u8, filename);
+        errdefer allocator.free(name);
         const buf = try allocator.alloc(u8, total_capacity);
 
         @memcpy(buf[0..text.len], text);
@@ -44,6 +53,7 @@ pub const GapBuffer = struct {
             .buffer = buf,
             .gap_start = text.len,
             .gap_end = total_capacity,
+            .filename = name,
         };
     }
 
@@ -65,6 +75,9 @@ pub const GapBuffer = struct {
     }
 
     pub fn deinit(self: *GapBuffer) void {
+        if (self.filename) |f| {
+            self.allocator.free(f);
+        }
         self.allocator.free(self.buffer);
     }
 
