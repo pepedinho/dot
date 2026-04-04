@@ -271,8 +271,10 @@ pub const Editor = struct {
             },
             .AppendNewLine => {
                 if (view.is_readonly) return;
-                try self.pushAction(.MoveDown);
+                try view.buf.appenNewLine();
                 try self.pushAction(.{ .SetMode = .Insert });
+                view.is_dirty = true;
+                // try self.pushAction(.MoveDown);
             },
             .CreatePop => |b| {
                 const pop_id = try self.createPop(b.pos, b.size, b.duration_ms);

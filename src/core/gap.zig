@@ -139,6 +139,18 @@ pub const GapBuffer = struct {
         }
     }
 
+    pub fn appenNewLine(self: *GapBuffer) !void {
+        while (self.gap_end < self.buffer.len and self.buffer[self.gap_end] != '\n') {
+            self.moveCursorRight();
+        }
+
+        if (self.gap_end == self.buffer.len) return;
+
+        self.moveCursorRight();
+        try self.insertChar('\n');
+        self.moveCursorLeft();
+    }
+
     /// Inserts a character exactly at the cursor's logical position in O(1) time.
     /// Consumes one byte of the gap. Expands the buffer if the gap is empty.
     pub fn insertChar(self: *GapBuffer, char: u8) !void {
