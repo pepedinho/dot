@@ -105,6 +105,7 @@ pub const Editor = struct {
     // ========================
     // TODO: create a dedicated struct
     debug_view_idx: ?usize = null,
+    debug_buf_idx: ?usize = null,
     // For fps counter
     frame_rendered: usize = 0,
     last_fps: usize = 0,
@@ -487,6 +488,37 @@ pub const Editor = struct {
         }
     }
 
+    pub fn closeView(self: *Editor, idx: usize) void {
+        const target = self.views.items[idx];
+
+        for (self.views.items, 0..) |*other, i| {
+            if (i == idx) continue;
+
+            if (other.y == target.y and other.height == target.height) {
+                if (other.x + other.width + 1 == target.x) {
+                    other.width += target.width + 1;
+                    break;
+                } else if (target.x + target.width + 1 == other.x) {
+                    other.x = target.x;
+                    other.width += target.width + 1;
+                    break;
+                }
+            }
+
+            if (other.x == target.x and other.width == target.width) {
+                if (other.y + other.height + 1 == target.y) {
+                    other.height += target.height + 1;
+                    break;
+                } else if (target.y + target.height + 1 == other.y) {
+                    other.y = target.y;
+                    other.height += target.height + 1;
+                    break;
+                }
+            }
+        }
+        _ = self.views.orderedRemove(idx);
+    }
+
     /// Main editor loop used to:
     /// - read user input
     /// - draw screen
@@ -615,6 +647,8 @@ pub const Editor = struct {
 
             w.print("[{d}]{s} Buf:{d} | Pos:({d},{d}) Size:{d}x{d}{s}\n", .{ i, active_mark, b_idx, view_item.x, view_item.y, view_item.width, view_item.height, ro_mark }) catch {};
         }
+        w.print("View queue size: {d}\n", .{self.views.items.len}) catch {};
+        w.print("Active view idx: {d}\n", .{self.active_view_idx}) catch {};
         w.print("\n", .{}) catch {};
 
         w.print("--- ACTION QUEUE ({d}) ---\n", .{self.action_queue.count()}) catch {};

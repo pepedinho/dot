@@ -141,10 +141,17 @@ fn cmdBnext(ed: *Editor, args: []const u8) !void {
 
 fn cmdDebug(ed: *Editor, args: []const u8) !void {
     _ = args;
+
     if (ed.debug_view_idx == null) {
-        const buf = try ed.allocator.create(buffer.GapBuffer);
-        buf.* = try buffer.GapBuffer.init(ed.allocator);
-        try ed.buffers.append(ed.allocator, buf);
+        const buf = if (ed.debug_buf_idx) |i|
+            ed.buffers.items[i]
+        else blk: {
+            const b = try ed.allocator.create(buffer.GapBuffer);
+            b.* = try buffer.GapBuffer.init(ed.allocator);
+            try ed.buffers.append(ed.allocator, b);
+            ed.debug_buf_idx = ed.buffers.items.len - 1;
+            break :blk b;
+        };
 
         try ed.splitVertical(buf);
 
@@ -154,6 +161,20 @@ fn cmdDebug(ed: *Editor, args: []const u8) !void {
         try ed.scheduler.add(.{ .UpdateDebugBuffer = buf }, 100);
         ed.needs_redraw = true;
     }
+}
+
+fn cmdClose(ed: *Editor, args: []const u8) !void {
+    _ = args;
+    const view_idx = ed.active_view_idx;
+    if (ed.debug_view_idx) |i| {
+        if (i == view_idx) {
+            ed.debug_view_idx = null;
+        }
+    }
+    if (view_idx == ed.views.items.len - 1)
+        ed.active_view_idx -= 1;
+    ed.closeView(view_idx);
+    ed.needs_redraw = true;
 }
 
 pub fn registerBuiltins(map: *CommandsMap) !void {
@@ -169,4 +190,5 @@ pub fn registerBuiltins(map: *CommandsMap) !void {
     try map.register("bprev", cmdBprev);
     try map.register("bnext", cmdBnext);
     try map.register("debug", cmdDebug);
+    try map.register("close", cmdClose);
 }
