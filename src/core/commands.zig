@@ -55,7 +55,10 @@ fn cmdW(ed: *Editor, args: []const u8) !void {
 fn cmdWq(ed: *Editor, args: []const u8) !void {
     _ = args;
     try ed.saveFile();
-    ed.quit();
+    const current_buf_idx = ed.getCurrentBufferIdx();
+    if (ed.buffers.items[current_buf_idx].filename) |_| {
+        ed.quit();
+    }
 }
 
 fn cmdTop(ed: *Editor, args: []const u8) !void {
@@ -91,7 +94,10 @@ fn cmdGoto(ed: *Editor, args: []const u8) !void {
 }
 
 fn cmdOpen(ed: *Editor, args: []const u8) !void {
-    const content = try fs.Fs.loadFast(ed.allocator, args);
+    const content = fs.Fs.loadFast(ed.allocator, args) catch |err| {
+        try ed.registerPop(null, null, @errorName(err), null);
+        return;
+    };
     defer ed.allocator.free(content);
 
     const new_buf = try ed.allocator.create(buffer.GapBuffer);
