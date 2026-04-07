@@ -20,7 +20,6 @@ pub const Renderer = struct {
     allocator: std.mem.Allocator,
     animation_phase: f32 = 0.0,
     active_animations: std.ArrayList(AnimatedRegion),
-    has_active_animations: bool = true,
 
     pub fn init(allocator: std.mem.Allocator) Renderer {
         return .{
@@ -36,7 +35,7 @@ pub const Renderer = struct {
     /// Advances the internal animation clock.
     /// Returns true if the screen should be redrawn to update animations.
     pub fn tickAnimations(self: *Renderer) bool {
-        if (!self.has_active_animations) return false;
+        if (self.active_animations.items.len == 0) return false;
 
         self.animation_phase += 0.5; // Animation speed
         if (self.animation_phase > 1000.0) self.animation_phase = 0.0;

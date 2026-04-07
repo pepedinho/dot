@@ -558,7 +558,7 @@ pub const Editor = struct {
                 self.is_dirty = false;
             }
 
-            if (self.renderer.has_active_animations)
+            if (self.renderer.active_animations.items.len > 0)
                 try self.renderer.refreshAnimationsOnly(stdout, self);
 
             try stdout.flush();

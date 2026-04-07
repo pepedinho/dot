@@ -172,12 +172,13 @@ fn cmdDebug(ed: *Editor, args: []const u8) !void {
 fn cmdClose(ed: *Editor, args: []const u8) !void {
     _ = args;
     const view_idx = ed.active_view_idx;
+    if (ed.views.items.len <= 1) return;
     if (ed.debug_view_idx) |i| {
         if (i == view_idx) {
             ed.debug_view_idx = null;
         }
     }
-    if (view_idx == ed.views.items.len - 1)
+    if (view_idx == ed.views.items.len - 1 and ed.active_view_idx > 0)
         ed.active_view_idx -= 1;
     ed.closeView(view_idx);
     ed.needs_redraw = true;

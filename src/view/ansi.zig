@@ -36,10 +36,10 @@ pub fn writeShimmerText(
     phase: f32,
     options: ShimmerOptions,
 ) !void {
-    const cycle_lenght = @as(f32, @floatFromInt(text.len)) + (options.wave_width * 2.0);
+    const cycle_length = @as(f32, @floatFromInt(text.len)) + (options.wave_width * 2.0);
     var local_phase = phase;
-    while (local_phase > cycle_lenght) {
-        local_phase -= cycle_lenght;
+    while (local_phase > cycle_length) {
+        local_phase -= cycle_length;
     }
 
     for (text, 0..) |char, i| {
@@ -60,6 +60,7 @@ pub fn writeShimmerText(
             current_color.b,
             char,
         });
-        try writer.writeAll("\x1b[0m");
+        // try writer.writeAll("\x1b[0m");
+        try writer.writeAll("\x1b[39m");
     }
 }
