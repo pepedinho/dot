@@ -172,14 +172,11 @@ pub const Renderer = struct {
         for (self.active_animations.items) |anim| {
             try ansi.goto(stdout, anim.y, anim.x);
 
-            // On délègue tout au Span !
             try anim.span.render(stdout, self.animation_phase);
 
-            // On s'assure de réinitialiser le style après ce Span isolé
             try stdout.writeAll("\x1b[0m");
         }
 
-        // On replace le curseur
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         try self.placeCursor(stdout, editor, arena.allocator());
@@ -213,7 +210,13 @@ pub const Renderer = struct {
 
         const buf_idx = editor.getCurrentBufferIdx();
         if (editor.buffers.items[buf_idx].filename) |f| {
-            const f_span = style.Span.init(f, .{ .effect = .Shimmer, .bold = true });
+            const shimmer_opts = ansi.ShimmerOptions{
+                .base_color = .{ .r = 100, .g = 100, .b = 100 }, //grey
+                .highlight_color = .{ .r = 255, .g = 215, .b = 0 },
+                .wave_width = 6.0,
+            };
+
+            const f_span = style.Span.init(f, .{ .effect = .{ .Shimmer = shimmer_opts }, .bold = true });
             // THE SHIMMER EFFECT TEST: We assign the Shimmer effect to the filename!
             try status_line.addSpan(f_span);
             try self.active_animations.append(self.allocator, .{

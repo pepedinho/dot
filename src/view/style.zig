@@ -13,9 +13,9 @@ pub const Color = enum(u8) {
     Default = 39,
 };
 
-pub const Effect = enum {
+pub const Effect = union(enum) {
     None,
-    Shimmer,
+    Shimmer: ansi.ShimmerOptions,
 };
 
 pub const Style = struct {
@@ -63,13 +63,8 @@ pub const Span = struct {
                 try writer.writeAll("m");
                 try writer.writeAll(self.text);
             },
-            .Shimmer => {
+            .Shimmer => |opts| {
                 try writer.writeAll("m");
-                const opts = ansi.ShimmerOptions{
-                    .base_color = .{ .r = 100, .g = 100, .b = 100 },
-                    .highlight_color = .{ .r = 0, .g = 255, .b = 255 },
-                    .wave_width = 8.0,
-                };
                 try ansi.writeShimmerText(writer, self.text, phase, opts);
             },
         }
