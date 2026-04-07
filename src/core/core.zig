@@ -5,7 +5,6 @@ const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
 const keybinds = @import("keybinds.zig");
-const ui = @import("../view/ui.zig");
 const keyboard = @import("../view/keyboard.zig");
 const pane = @import("pane.zig");
 const fs = @import("../fs/filesystem.zig");
@@ -17,6 +16,7 @@ const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
 const CommandsMap = commands.CommandsMap;
+const Renderer = @import("../view/renderer.zig").Renderer;
 
 pub const CoreError = error{
     NoFileName,
@@ -100,11 +100,13 @@ pub const Editor = struct {
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
     scheduler: Scheduler = .{},
+    renderer: Renderer,
     // ========================
     // Debug Part
     // ========================
     // TODO: create a dedicated struct
     debug_view_idx: ?usize = null,
+    debug_buf_idx: ?usize = null,
     // For fps counter
     frame_rendered: usize = 0,
     last_fps: usize = 0,
@@ -126,6 +128,7 @@ pub const Editor = struct {
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
+            .renderer = Renderer.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -164,6 +167,8 @@ pub const Editor = struct {
             b.deinit();
             self.allocator.destroy(b);
         }
+
+        self.renderer.deinit();
         self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
         self.key_binds.deinit();
@@ -208,6 +213,10 @@ pub const Editor = struct {
                 var it = self.pop_store.iterator();
                 var to_remove: std.ArrayList(u32) = .empty;
                 defer to_remove.deinit(self.allocator);
+
+                const need_anim_redraw = self.renderer.tickAnimations();
+                if (need_anim_redraw)
+                    self.is_dirty = true;
 
                 while (it.next()) |entry| {
                     if (entry.value_ptr.expire_at) |expiration| {
@@ -487,6 +496,37 @@ pub const Editor = struct {
         }
     }
 
+    pub fn closeView(self: *Editor, idx: usize) void {
+        const target = self.views.items[idx];
+
+        for (self.views.items, 0..) |*other, i| {
+            if (i == idx) continue;
+
+            if (other.y == target.y and other.height == target.height) {
+                if (other.x + other.width + 1 == target.x) {
+                    other.width += target.width + 1;
+                    break;
+                } else if (target.x + target.width + 1 == other.x) {
+                    other.x = target.x;
+                    other.width += target.width + 1;
+                    break;
+                }
+            }
+
+            if (other.x == target.x and other.width == target.width) {
+                if (other.y + other.height + 1 == target.y) {
+                    other.height += target.height + 1;
+                    break;
+                } else if (target.y + target.height + 1 == other.y) {
+                    other.y = target.y;
+                    other.height += target.height + 1;
+                    break;
+                }
+            }
+        }
+        _ = self.views.orderedRemove(idx);
+    }
+
     /// Main editor loop used to:
     /// - read user input
     /// - draw screen
@@ -505,15 +545,21 @@ pub const Editor = struct {
                 }
 
                 if (self.needs_redraw) {
-                    try ui.refreshScreen(stdout, self);
+                    // try ui.refreshScreen(stdout, self);
+                    try self.renderer.refreshScreen(self, stdout);
                     self.needs_redraw = false;
                 } else {
-                    if (has_dirty_views)
-                        try ui.refreshDirtyViews(stdout, self);
-                    try ui.updateCurrentLine(stdout, self);
+                    if (has_dirty_views) {
+                        try self.renderer.refreshDirtyViews(self, stdout);
+                    } else {
+                        try self.renderer.updateCurrentLine(self, stdout);
+                    }
                 }
                 self.is_dirty = false;
             }
+
+            if (self.renderer.active_animations.items.len > 0)
+                try self.renderer.refreshAnimationsOnly(stdout, self);
 
             try stdout.flush();
 
@@ -615,6 +661,8 @@ pub const Editor = struct {
 
             w.print("[{d}]{s} Buf:{d} | Pos:({d},{d}) Size:{d}x{d}{s}\n", .{ i, active_mark, b_idx, view_item.x, view_item.y, view_item.width, view_item.height, ro_mark }) catch {};
         }
+        w.print("View queue size: {d}\n", .{self.views.items.len}) catch {};
+        w.print("Active view idx: {d}\n", .{self.active_view_idx}) catch {};
         w.print("\n", .{}) catch {};
 
         w.print("--- ACTION QUEUE ({d}) ---\n", .{self.action_queue.count()}) catch {};
