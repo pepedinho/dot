@@ -17,6 +17,7 @@ const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
 const CommandsMap = commands.CommandsMap;
+const Renderer = @import("../view/renderer.zig").Renderer;
 
 pub const CoreError = error{
     NoFileName,
@@ -100,6 +101,7 @@ pub const Editor = struct {
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
     scheduler: Scheduler = .{},
+    renderer: Renderer,
     // ========================
     // Debug Part
     // ========================
@@ -127,6 +129,7 @@ pub const Editor = struct {
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
+            .renderer = Renderer.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -165,6 +168,8 @@ pub const Editor = struct {
             b.deinit();
             self.allocator.destroy(b);
         }
+
+        self.renderer.deinit();
         self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
         self.key_binds.deinit();
@@ -209,6 +214,10 @@ pub const Editor = struct {
                 var it = self.pop_store.iterator();
                 var to_remove: std.ArrayList(u32) = .empty;
                 defer to_remove.deinit(self.allocator);
+
+                const need_anim_redraw = self.renderer.tickAnimations();
+                if (need_anim_redraw)
+                    self.is_dirty = true;
 
                 while (it.next()) |entry| {
                     if (entry.value_ptr.expire_at) |expiration| {
@@ -537,15 +546,21 @@ pub const Editor = struct {
                 }
 
                 if (self.needs_redraw) {
-                    try ui.refreshScreen(stdout, self);
+                    // try ui.refreshScreen(stdout, self);
+                    try self.renderer.refreshScreen(self, stdout);
                     self.needs_redraw = false;
                 } else {
-                    if (has_dirty_views)
-                        try ui.refreshDirtyViews(stdout, self);
-                    try ui.updateCurrentLine(stdout, self);
+                    if (has_dirty_views) {
+                        try self.renderer.refreshDirtyViews(self, stdout);
+                    } else {
+                        try self.renderer.updateCurrentLine(self, stdout);
+                    }
                 }
                 self.is_dirty = false;
             }
+
+            if (self.renderer.has_active_animations)
+                try self.renderer.refreshAnimationsOnly(stdout, self);
 
             try stdout.flush();
 

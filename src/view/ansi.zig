@@ -36,9 +36,16 @@ pub fn writeShimmerText(
     phase: f32,
     options: ShimmerOptions,
 ) !void {
+    const cycle_lenght = @as(f32, @floatFromInt(text.len)) + (options.wave_width * 2.0);
+    var local_phase = phase;
+    while (local_phase > cycle_lenght) {
+        local_phase -= cycle_lenght;
+    }
+
     for (text, 0..) |char, i| {
-        const pos = @as(u32, @floatFromInt(i));
-        const dist = @abs(pos - phase);
+        const pos: f32 = @floatFromInt(i);
+        const adjusted_phase = local_phase - options.wave_width;
+        const dist = @abs(pos - adjusted_phase);
 
         var intensity: f32 = 0.0;
 
@@ -47,7 +54,7 @@ pub fn writeShimmerText(
         }
 
         const current_color = lerpColor(options.base_color, options.highlight_color, intensity);
-        try writer.print("\x1b[38;2;{};{};{}m{c}", .{
+        try writer.print("\x1b[38;2;{d};{d};{d}m{c}", .{
             current_color.r,
             current_color.g,
             current_color.b,

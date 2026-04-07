@@ -1,4 +1,5 @@
 const std = @import("std");
+const ansi = @import("ansi.zig");
 
 pub const Color = enum(u8) {
     Black = 30,
@@ -12,12 +13,18 @@ pub const Color = enum(u8) {
     Default = 39,
 };
 
+pub const Effect = enum {
+    None,
+    Shimmer,
+};
+
 pub const Style = struct {
     fg: ?Color = null,
     bg: ?Color = null,
     bold: bool = false,
     italic: bool = false,
     underline: bool = false,
+    effect: Effect = .None,
 
     pub fn toAnsi(self: Style, writer: *std.Io.Writer) !void {
         try writer.writeAll("\x1b[0");
@@ -41,6 +48,31 @@ pub const Span = struct {
             .text = text,
             .style = style,
         };
+    }
+
+    pub fn render(self: Span, writer: anytype, phase: f32) !void {
+        try writer.writeAll("\x1b[0");
+        if (self.style.bold) try writer.writeAll(";1");
+        if (self.style.italic) try writer.writeAll(";3");
+        if (self.style.underline) try writer.writeAll(";4");
+        if (self.style.bg) |c| try writer.print(";{d}", .{@intFromEnum(c) + 10});
+
+        switch (self.style.effect) {
+            .None => {
+                if (self.style.fg) |c| try writer.print(";{d}", .{@intFromEnum(c)});
+                try writer.writeAll("m");
+                try writer.writeAll(self.text);
+            },
+            .Shimmer => {
+                try writer.writeAll("m");
+                const opts = ansi.ShimmerOptions{
+                    .base_color = .{ .r = 100, .g = 100, .b = 100 },
+                    .highlight_color = .{ .r = 0, .g = 255, .b = 255 },
+                    .wave_width = 8.0,
+                };
+                try ansi.writeShimmerText(writer, self.text, phase, opts);
+            },
+        }
     }
 };
 
@@ -67,10 +99,9 @@ pub const Line = struct {
         try self.addSpan(Span.init(text, .{}));
     }
 
-    pub fn render(self: *const Line, writer: *std.Io.Writer) !void {
+    pub fn render(self: *const Line, writer: *std.Io.Writer, phase: f32) !void {
         for (self.spans.items) |span| {
-            try span.style.toAnsi(writer);
-            try writer.writeAll(span.text);
+            try span.render(writer, phase);
         }
         try writer.writeAll("\x1b[0m");
     }
