@@ -2,7 +2,6 @@ const std = @import("std");
 const buffer = @import("core/gap.zig");
 const terminal = @import("view/terminal.zig");
 const keyboard = @import("view/keyboard.zig");
-const ui = @import("view/ui.zig");
 const utils = @import("utils.zig");
 const Editor = @import("core/core.zig").Editor;
 const Action = @import("core/core.zig").Action;

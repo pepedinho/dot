@@ -5,7 +5,6 @@ const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
 const keybinds = @import("keybinds.zig");
-const ui = @import("../view/ui.zig");
 const keyboard = @import("../view/keyboard.zig");
 const pane = @import("pane.zig");
 const fs = @import("../fs/filesystem.zig");

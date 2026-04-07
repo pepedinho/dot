@@ -50,6 +50,7 @@ pub const Renderer = struct {
 
     /// Speed 1: Full Screen Redraw
     pub fn refreshScreen(self: *Renderer, editor: *Editor, stdout: anytype) !void {
+        self.active_animations.clearRetainingCapacity();
         try stdout.writeAll(ansi.hide_cursor);
         try stdout.writeAll(ansi.clear_screen);
 
@@ -71,6 +72,7 @@ pub const Renderer = struct {
 
     /// Speed 2: Targeted Redraw (Dirty Rectangles & Animations)
     pub fn refreshDirtyViews(self: *Renderer, editor: *Editor, stdout: anytype) !void {
+        self.active_animations.clearRetainingCapacity();
         try stdout.writeAll(ansi.hide_cursor);
 
         var arena = std.heap.ArenaAllocator.init(self.allocator);
