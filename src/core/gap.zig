@@ -55,7 +55,7 @@ pub const GapBuffer = struct {
         i = 0;
         const part2 = self.getSecond();
         while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
-            const logical_pos = self.gap_end + pos;
+            const logical_pos = self.gap_start + pos;
             try self.highlight.append(self.allocator, .{ .start = logical_pos, .end = logical_pos + query.len });
             i = pos + query.len;
         }
