@@ -3,6 +3,11 @@ const utils = @import("../utils.zig");
 
 const TAB_SIZE: usize = 8;
 
+pub const Mark = struct {
+    start: usize, // physical index
+    end: usize,
+};
+
 /// Gap buffer implementation
 pub const GapBuffer = struct {
     allocator: std.mem.Allocator,
@@ -16,6 +21,8 @@ pub const GapBuffer = struct {
     gap_end: usize,
     /// associated filename
     filename: ?[]const u8,
+    /// This field is used by R-engine to colorize text frames
+    highlight: std.ArrayList(Mark),
 
     const INITIAL_CAPACITY = 1024;
 
@@ -30,7 +37,28 @@ pub const GapBuffer = struct {
             .gap_start = 0,
             .gap_end = buf.len,
             .filename = null,
+            .highlight = .empty,
         };
+    }
+
+    pub fn find(self: *GapBuffer, query: []const u8) !void {
+        self.highlight.clearRetainingCapacity();
+        if (query.len == 0) return;
+
+        var i: usize = 0;
+        const part1 = self.getFirst();
+        while (std.mem.indexOfPos(u8, part1, i, query)) |pos| {
+            try self.highlight.append(self.allocator, .{ .start = pos, .end = pos + query.len });
+            i = pos + query.len;
+        }
+
+        i = 0;
+        const part2 = self.getSecond();
+        while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
+            const physical_start = self.gap_end + pos;
+            try self.highlight.append(self.allocator, .{ .start = physical_start, .end = physical_start + query.len });
+            i = pos + query.len;
+        }
     }
 
     /// Initializes a Gap Buffer loaded with predefined text.
@@ -54,6 +82,7 @@ pub const GapBuffer = struct {
             .gap_start = text.len,
             .gap_end = total_capacity,
             .filename = name,
+            .highlight = .empty,
         };
     }
 
@@ -78,6 +107,7 @@ pub const GapBuffer = struct {
         if (self.filename) |f| {
             self.allocator.free(f);
         }
+        self.highlight.deinit(self.allocator);
         self.allocator.free(self.buffer);
     }
 

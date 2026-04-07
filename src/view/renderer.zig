@@ -6,7 +6,7 @@ const style = @import("style.zig");
 const ansi = @import("ansi.zig");
 const pop = @import("pop.zig");
 
-const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND" };
+const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND", "SEARCH" };
 
 pub const AnimatedRegion = struct {
     x: usize,
@@ -198,6 +198,7 @@ pub const Renderer = struct {
             .Normal => style.Color.Cyan,
             .Insert => style.Color.Green,
             .Command => style.Color.Red,
+            .Search => style.Color.Yellow,
         };
 
         const mode_idx = @intFromEnum(editor.mode);
@@ -238,14 +239,18 @@ pub const Renderer = struct {
         const text = editor.cmd_buf.items;
         const cols = editor.win.cols;
 
-        try stdout.print("\x1b[{d};1H", .{row});
+        const mode_str = MODE[@intFromEnum(editor.mode)];
+        const offset = mode_str.len + 3;
+        try ansi.goto(stdout, row, offset + 1);
 
+        // try stdout.print("\x1b[{d};1H", .{row});
+        const prompt_char = if (editor.mode == .Search) "/" else ":";
         var cmd_line = style.Line.init(arena);
 
-        try cmd_line.addSpan(style.Span.init(":", .{ .bg = .Black, .fg = .Yellow, .bold = true }));
+        try cmd_line.addSpan(style.Span.init(prompt_char, .{ .bg = .Black, .fg = .Yellow, .bold = true }));
         try cmd_line.addSpan(style.Span.init(text, .{ .bg = .Black, .fg = .White }));
 
-        const used_cols = text.len + 1;
+        const used_cols = offset + text.len + 1;
         if (cols > used_cols) {
             const padding = try arena.alloc(u8, cols - used_cols);
             @memset(padding, ' ');
@@ -261,7 +266,7 @@ pub const Renderer = struct {
     // ==========================================
 
     fn placeCursor(self: *Renderer, stdout: anytype, editor: *Editor, arena: std.mem.Allocator) !void {
-        if (editor.mode == .Command) {
+        if (editor.mode == .Command or editor.mode == .Search) {
             try self.commandPrompt(stdout, editor, arena);
         } else {
             const view = editor.getActiveView();
@@ -287,9 +292,19 @@ pub const Renderer = struct {
         try ansi.goto(stdout, screen_row, view.x);
 
         const parts = [_][]const u8{ part1, part2 };
-        for (parts) |part| {
-            for (part) |c| {
+        for (parts, 0..) |part, p_idx| {
+            for (part, 0..) |c, c_idx| {
                 if (screen_row > max_rows) break;
+
+                const physical_idx = if (p_idx == 0) c_idx else view.buf.gap_end + c_idx;
+
+                var is_highlighted = false;
+                for (view.buf.highlight.items) |mark| {
+                    if (physical_idx >= mark.start and physical_idx < mark.end) {
+                        is_highlighted = true;
+                        break;
+                    }
+                }
 
                 if (c == '\n') {
                     if (current_row > view.row_offset) {
@@ -314,7 +329,9 @@ pub const Renderer = struct {
                 } else {
                     if (current_row > view.row_offset) {
                         if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
+                            if (is_highlighted) try stdout.writeAll("\x1b[43;30m");
                             try stdout.writeAll(&[_]u8{c});
+                            if (is_highlighted) try stdout.writeAll("\x1b[m");
                         }
                     }
                     current_col += 1;

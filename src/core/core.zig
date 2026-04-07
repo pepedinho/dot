@@ -27,6 +27,7 @@ pub const Mode = enum {
     Normal,
     Insert,
     Command,
+    Search,
 };
 
 /// a utiliti structure to create a `Pop`
@@ -292,13 +293,24 @@ pub const Editor = struct {
             },
             .CommandChar => |c| {
                 try self.cmd_buf.append(self.allocator, c);
+                if (self.mode == .Search) {
+                    try view.buf.find(self.cmd_buf.items);
+                }
                 self.needs_redraw = true;
             },
             .CommandBackspace => {
                 _ = self.cmd_buf.pop();
+                if (self.mode == .Search) {
+                    try view.buf.find(self.cmd_buf.items);
+                }
                 self.needs_redraw = true;
             },
             .ExecuteCommand => {
+                if (self.mode == .Search) {
+                    try self.pushAction(.ClearCommandBuf);
+                    self.mode = self.last_mode;
+                    return;
+                }
                 try self.executeCmd();
                 self.needs_redraw = true;
             },
@@ -596,14 +608,14 @@ pub const Editor = struct {
                             else => {},
                         }
                     },
-                    .Command => {
+                    .Command, .Search => {
                         switch (key) {
                             .escape => try self.pushAction(.{ .SetMode = .Normal }),
                             .ascii => |c| {
                                 try self.pushAction(.{ .CommandChar = c });
                             },
                             .backspace => try self.pushAction(.CommandBackspace),
-                            .enter => try self.pushAction(.ExecuteCommand),
+                            .enter => if (self.mode == .Command) try self.pushAction(.ExecuteCommand),
                             else => {},
                         }
                     },
