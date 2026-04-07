@@ -3,6 +3,11 @@ const utils = @import("../utils.zig");
 
 const TAB_SIZE: usize = 8;
 
+pub const Mark = struct {
+    start: usize, // physical index
+    end: usize,
+};
+
 /// Gap buffer implementation
 pub const GapBuffer = struct {
     allocator: std.mem.Allocator,
@@ -16,6 +21,8 @@ pub const GapBuffer = struct {
     gap_end: usize,
     /// associated filename
     filename: ?[]const u8,
+    /// This field is used by R-engine to colorize text frames
+    highlight: std.ArrayList(Mark),
 
     const INITIAL_CAPACITY = 1024;
 
@@ -30,7 +37,28 @@ pub const GapBuffer = struct {
             .gap_start = 0,
             .gap_end = buf.len,
             .filename = null,
+            .highlight = .empty,
         };
+    }
+
+    pub fn find(self: *GapBuffer, query: []const u8) !void {
+        self.highlight.clearRetainingCapacity();
+        if (query.len == 0) return;
+
+        var i: usize = 0;
+        const part1 = self.getFirst();
+        while (std.mem.indexOfPos(u8, part1, i, query)) |pos| {
+            try self.highlight.append(self.allocator, .{ .start = pos, .end = pos + query.len });
+            i = pos + query.len;
+        }
+
+        i = 0;
+        const part2 = self.getSecond();
+        while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
+            const logical_pos = self.gap_start + pos;
+            try self.highlight.append(self.allocator, .{ .start = logical_pos, .end = logical_pos + query.len });
+            i = pos + query.len;
+        }
     }
 
     /// Initializes a Gap Buffer loaded with predefined text.
@@ -54,6 +82,7 @@ pub const GapBuffer = struct {
             .gap_start = text.len,
             .gap_end = total_capacity,
             .filename = name,
+            .highlight = .empty,
         };
     }
 
@@ -78,6 +107,7 @@ pub const GapBuffer = struct {
         if (self.filename) |f| {
             self.allocator.free(f);
         }
+        self.highlight.deinit(self.allocator);
         self.allocator.free(self.buffer);
     }
 
@@ -245,5 +275,51 @@ pub const GapBuffer = struct {
             self.gap_start += shift_len;
             self.gap_end += shift_len;
         }
+    }
+
+    pub fn jumpToLogical(self: *GapBuffer, target_logical: usize) void {
+        if (target_logical == self.gap_start) return;
+
+        if (target_logical < self.gap_start) {
+            const shift = self.gap_start - target_logical;
+            std.mem.copyBackwards(u8, self.buffer[self.gap_end - shift .. self.gap_end], self.buffer[target_logical..self.gap_start]);
+            self.gap_start -= shift;
+            self.gap_end -= shift;
+        } else {
+            const shift = target_logical - self.gap_start;
+            std.mem.copyForwards(u8, self.buffer[self.gap_start .. self.gap_start + shift], self.buffer[self.gap_end .. self.gap_end + shift]);
+            self.gap_start += shift;
+            self.gap_end += shift;
+        }
+    }
+
+    pub fn jumpToNextSearchResult(self: *GapBuffer) void {
+        if (self.highlight.items.len == 0) return;
+
+        var target = self.highlight.items[0].start;
+        for (self.highlight.items) |mark| {
+            if (mark.start > self.gap_start) {
+                target = mark.start;
+                break;
+            }
+        }
+        self.jumpToLogical(target);
+    }
+
+    pub fn jumpToPrevSearchResult(self: *GapBuffer) void {
+        if (self.highlight.items.len == 0) return;
+
+        var target = self.highlight.items[self.highlight.items.len - 1].start;
+
+        var i: usize = self.highlight.items.len;
+        while (i > 0) {
+            i -= 1;
+            const mark = self.highlight.items[i];
+            if (mark.start < self.gap_start) {
+                target = mark.start;
+                break;
+            }
+        }
+        self.jumpToLogical(target);
     }
 };

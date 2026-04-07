@@ -11,4 +11,7 @@ pub fn loadStandardKeyBinds(editor: *Editor) !void {
     try editor.registerKeyBind('x', .DeleteChar);
     try editor.registerKeyBind('q', .Quit);
     try editor.registerKeyBind(':', .{ .SetMode = .Command });
+    try editor.registerKeyBind('/', .{ .SetMode = .Search });
+    try editor.registerKeyBind('n', .NextSearchResult);
+    try editor.registerKeyBind('N', .PrevSearchResult);
 }

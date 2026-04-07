@@ -27,6 +27,7 @@ pub const Mode = enum {
     Normal,
     Insert,
     Command,
+    Search,
 };
 
 /// a utiliti structure to create a `Pop`
@@ -237,6 +238,10 @@ pub const Editor = struct {
                 if (self.mode == .Command) {
                     self.cmd_buf.clearRetainingCapacity();
                 }
+                if (self.mode == .Insert) {
+                    self.cmd_buf.clearRetainingCapacity();
+                    view.buf.highlight.clearRetainingCapacity();
+                }
                 self.mode = m;
                 self.needs_redraw = true;
             },
@@ -292,14 +297,35 @@ pub const Editor = struct {
             },
             .CommandChar => |c| {
                 try self.cmd_buf.append(self.allocator, c);
+                if (self.mode == .Search) {
+                    try view.buf.find(self.cmd_buf.items);
+                }
                 self.needs_redraw = true;
             },
             .CommandBackspace => {
                 _ = self.cmd_buf.pop();
+                if (self.mode == .Search) {
+                    try view.buf.find(self.cmd_buf.items);
+                }
                 self.needs_redraw = true;
             },
             .ExecuteCommand => {
-                try self.executeCmd();
+                if (self.mode == .Search) {
+                    self.mode = self.last_mode;
+                    try self.pushAction(.ClearCommandBuf);
+                    self.cmd_buf.clearRetainingCapacity();
+                    // view.buf.jumpToNextSearchResult();
+                } else {
+                    try self.executeCmd();
+                }
+                self.needs_redraw = true;
+            },
+            .NextSearchResult => {
+                view.buf.jumpToNextSearchResult();
+                self.needs_redraw = true;
+            },
+            .PrevSearchResult => {
+                view.buf.jumpToPrevSearchResult();
                 self.needs_redraw = true;
             },
             .ClearCommandBuf => {
@@ -596,7 +622,7 @@ pub const Editor = struct {
                             else => {},
                         }
                     },
-                    .Command => {
+                    .Command, .Search => {
                         switch (key) {
                             .escape => try self.pushAction(.{ .SetMode = .Normal }),
                             .ascii => |c| {
