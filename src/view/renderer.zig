@@ -296,11 +296,11 @@ pub const Renderer = struct {
             for (part, 0..) |c, c_idx| {
                 if (screen_row > max_rows) break;
 
-                const physical_idx = if (p_idx == 0) c_idx else view.buf.gap_end + c_idx;
+                const logical_idx = if (p_idx == 0) c_idx else view.buf.gap_start + c_idx;
 
                 var is_highlighted = false;
                 for (view.buf.highlight.items) |mark| {
-                    if (physical_idx >= mark.start and physical_idx < mark.end) {
+                    if (logical_idx >= mark.start and logical_idx < mark.end) {
                         is_highlighted = true;
                         break;
                     }

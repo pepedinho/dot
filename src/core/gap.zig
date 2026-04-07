@@ -55,8 +55,8 @@ pub const GapBuffer = struct {
         i = 0;
         const part2 = self.getSecond();
         while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
-            const physical_start = self.gap_end + pos;
-            try self.highlight.append(self.allocator, .{ .start = physical_start, .end = physical_start + query.len });
+            const logical_pos = self.gap_end + pos;
+            try self.highlight.append(self.allocator, .{ .start = logical_pos, .end = logical_pos + query.len });
             i = pos + query.len;
         }
     }
@@ -275,5 +275,51 @@ pub const GapBuffer = struct {
             self.gap_start += shift_len;
             self.gap_end += shift_len;
         }
+    }
+
+    pub fn jumpToLogical(self: *GapBuffer, target_logical: usize) void {
+        if (target_logical == self.gap_start) return;
+
+        if (target_logical < self.gap_start) {
+            const shift = self.gap_start - target_logical;
+            std.mem.copyBackwards(u8, self.buffer[self.gap_end - shift .. self.gap_end], self.buffer[target_logical..self.gap_start]);
+            self.gap_start -= shift;
+            self.gap_end -= shift;
+        } else {
+            const shift = target_logical - self.gap_start;
+            std.mem.copyForwards(u8, self.buffer[self.gap_start .. self.gap_start + shift], self.buffer[self.gap_end .. self.gap_end + shift]);
+            self.gap_start += shift;
+            self.gap_end += shift;
+        }
+    }
+
+    pub fn jumpToNextSearchResult(self: *GapBuffer) void {
+        if (self.highlight.items.len == 0) return;
+
+        var target = self.highlight.items[0].start;
+        for (self.highlight.items) |mark| {
+            if (mark.start > self.gap_start) {
+                target = mark.start;
+                break;
+            }
+        }
+        self.jumpToLogical(target);
+    }
+
+    pub fn jumpToPrevSearchResult(self: *GapBuffer) void {
+        if (self.highlight.items.len == 0) return;
+
+        var target = self.highlight.items[self.highlight.items.len - 1].start;
+
+        var i: usize = self.highlight.items.len;
+        while (i > 0) {
+            i -= 1;
+            const mark = self.highlight.items[i];
+            if (mark.start < self.gap_start) {
+                target = mark.start;
+                break;
+            }
+        }
+        self.jumpToLogical(target);
     }
 };

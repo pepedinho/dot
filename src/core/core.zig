@@ -238,6 +238,9 @@ pub const Editor = struct {
                 if (self.mode == .Command) {
                     self.cmd_buf.clearRetainingCapacity();
                 }
+                if (self.mode == .Insert) {
+                    view.buf.highlight.clearRetainingCapacity();
+                }
                 self.mode = m;
                 self.needs_redraw = true;
             },
@@ -307,11 +310,21 @@ pub const Editor = struct {
             },
             .ExecuteCommand => {
                 if (self.mode == .Search) {
-                    try self.pushAction(.ClearCommandBuf);
                     self.mode = self.last_mode;
-                    return;
+                    try self.pushAction(.ClearCommandBuf);
+                    self.cmd_buf.clearRetainingCapacity();
+                    // view.buf.jumpToNextSearchResult();
+                } else {
+                    try self.executeCmd();
                 }
-                try self.executeCmd();
+                self.needs_redraw = true;
+            },
+            .NextSearchResult => {
+                view.buf.jumpToNextSearchResult();
+                self.needs_redraw = true;
+            },
+            .PrevSearchResult => {
+                view.buf.jumpToPrevSearchResult();
                 self.needs_redraw = true;
             },
             .ClearCommandBuf => {
@@ -615,7 +628,7 @@ pub const Editor = struct {
                                 try self.pushAction(.{ .CommandChar = c });
                             },
                             .backspace => try self.pushAction(.CommandBackspace),
-                            .enter => if (self.mode == .Command) try self.pushAction(.ExecuteCommand),
+                            .enter => try self.pushAction(.ExecuteCommand),
                             else => {},
                         }
                     },

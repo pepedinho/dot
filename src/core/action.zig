@@ -21,6 +21,8 @@ pub const Action = union(enum) {
     ExecuteCommand,
     ClearCommandBuf,
     UpdateDebugBuffer: *buffer.GapBuffer,
+    NextSearchResult,
+    PrevSearchResult,
     // SplitView,
     // GotoView: u8,
     Quit,
