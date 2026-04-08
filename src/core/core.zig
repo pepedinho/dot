@@ -17,6 +17,7 @@ const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
 const CommandsMap = commands.CommandsMap;
 const Renderer = @import("../view/renderer.zig").Renderer;
+const Transaction = @import("history.zig").Transaction;
 
 pub const CoreError = error{
     NoFileName,
@@ -101,7 +102,14 @@ pub const Editor = struct {
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
     scheduler: Scheduler = .{},
+    /// Render engine used to render text to screen
     renderer: Renderer,
+    /// Transaction stack used to undo batch of actions
+    undo_stack: std.ArrayList(Transaction),
+    /// Current transaction will be pushed in `self.undo_stack`
+    current_transaction: ?Transaction,
+    /// Used to time batch of actions after inactive time slice
+    last_edit_time: usize,
     // ========================
     // Debug Part
     // ========================
