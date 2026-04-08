@@ -24,7 +24,7 @@ pub const Action = union(enum) {
     NextSearchResult,
     PrevSearchResult,
     YankLine,
-    Past,
+    Paste,
     Undo,
     // SplitView,
     // GotoView: u8,

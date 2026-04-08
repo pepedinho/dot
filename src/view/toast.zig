@@ -23,6 +23,7 @@ pub const ToastManager = struct {
 
     pub fn push(self: *ToastManager, text: []const u8, duration_ms: i64, theme: style.Style) !void {
         const padded_text = try std.fmt.allocPrint(self.allocator, " {s} ", .{text});
+        errdefer self.allocator.free(padded_text);
 
         try self.toasts.append(self.allocator, .{
             .text = padded_text,
@@ -52,6 +53,7 @@ pub const ToastManager = struct {
         if (self.toasts.items.len == 0) return;
 
         try stdout.writeAll(ansi.hide_cursor);
+        defer stdout.writeAll(ansi.show_cursor) catch {};
         var offset_y: u16 = 1;
 
         var i: usize = self.toasts.items.len;

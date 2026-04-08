@@ -12,7 +12,7 @@ const actions = @import("action.zig");
 const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
 
-const ToastManger = @import("../view/toast.zig").ToastManager;
+const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
@@ -94,7 +94,7 @@ pub const Editor = struct {
     /// Is map to store multiple active Pops by their unique ID.
     /// With different lifetime and attributs
     pop_store: std.AutoHashMap(u32, pop.Pop),
-    toast_manager: ToastManger,
+    toast_manager: ToastManager,
     /// Used to increment id for assign
     next_popup_id: u32 = 1,
     /// Store keybinds and theirs associated Action
@@ -135,7 +135,7 @@ pub const Editor = struct {
             .last_fps_time = std.time.milliTimestamp(),
             .renderer = Renderer.init(allocator),
             .clipboard = null,
-            .toast_manager = ToastManger.init(allocator),
+            .toast_manager = ToastManager.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -325,13 +325,13 @@ pub const Editor = struct {
                 try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = .Cyan, .bg = .Black, .bold = true });
                 self.needs_redraw = true;
             },
-            .Past => {
+            .Paste => {
                 if (view.is_readonly) return;
                 if (self.clipboard) |clip| {
-                    try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
                     for (clip) |c| {
                         try view.buf.insertChar(c);
                     }
+                    try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
                     try self.toast_manager.push("Pasted", 1500, .{ .fg = .Green, .bg = .Black, .bold = true });
                     self.needs_redraw = true;
                 } else {
