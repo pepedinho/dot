@@ -12,6 +12,7 @@ const actions = @import("action.zig");
 const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
 
+const ToastManger = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
@@ -93,6 +94,7 @@ pub const Editor = struct {
     /// Is map to store multiple active Pops by their unique ID.
     /// With different lifetime and attributs
     pop_store: std.AutoHashMap(u32, pop.Pop),
+    toast_manager: ToastManger,
     /// Used to increment id for assign
     next_popup_id: u32 = 1,
     /// Store keybinds and theirs associated Action
@@ -133,6 +135,7 @@ pub const Editor = struct {
             .last_fps_time = std.time.milliTimestamp(),
             .renderer = Renderer.init(allocator),
             .clipboard = null,
+            .toast_manager = ToastManger.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -179,6 +182,7 @@ pub const Editor = struct {
         self.cmd_buf.deinit(self.allocator);
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
+        self.toast_manager.deinit();
         if (self.clipboard) |c| self.allocator.free(c);
     }
 
@@ -233,6 +237,11 @@ pub const Editor = struct {
 
                 for (to_remove.items) |id| {
                     self.destroyPop(id);
+                    self.needs_redraw = true;
+                    self.is_dirty = true;
+                }
+
+                if (self.toast_manager.tick()) {
                     self.needs_redraw = true;
                     self.is_dirty = true;
                 }
@@ -313,6 +322,8 @@ pub const Editor = struct {
                 const bounds = view.buf.getLineBounds(view.buf.gap_start);
                 if (self.clipboard) |old_clip| self.allocator.free(old_clip);
                 self.clipboard = try view.buf.getLogicalRange(self.allocator, bounds.start, bounds.end);
+                try self.toast_manager.push("Yanked 1 line", 2000);
+                self.needs_redraw = true;
             },
             .Past => {
                 if (view.is_readonly) return;
@@ -321,6 +332,10 @@ pub const Editor = struct {
                     for (clip) |c| {
                         try view.buf.insertChar(c);
                     }
+                    try self.toast_manager.push("Pasted", 2000);
+                    self.needs_redraw = true;
+                } else {
+                    try self.toast_manager.push("Clipboard is empty", 2000);
                     self.needs_redraw = true;
                 }
             },
