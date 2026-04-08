@@ -14,4 +14,5 @@ pub fn loadStandardKeyBinds(editor: *Editor) !void {
     try editor.registerKeyBind('/', .{ .SetMode = .Search });
     try editor.registerKeyBind('n', .NextSearchResult);
     try editor.registerKeyBind('N', .PrevSearchResult);
+    try editor.registerKeyBind('u', .Undo);
 }
