@@ -1,9 +1,11 @@
 const std = @import("std");
 const ansi = @import("ansi.zig");
+const style = @import("style.zig");
 
 const Toast = struct {
     text: []const u8,
     expire_at: i64,
+    theme: style.Style,
 };
 
 pub const ToastManager = struct {
@@ -19,12 +21,13 @@ pub const ToastManager = struct {
         self.toasts.deinit(self.allocator);
     }
 
-    pub fn push(self: *ToastManager, text: []const u8, duration_ms: i64) !void {
-        const text_copy = try self.allocator.dupe(u8, text);
+    pub fn push(self: *ToastManager, text: []const u8, duration_ms: i64, theme: style.Style) !void {
+        const padded_text = try std.fmt.allocPrint(self.allocator, " {s} ", .{text});
 
         try self.toasts.append(self.allocator, .{
-            .text = text_copy,
+            .text = padded_text,
             .expire_at = std.time.milliTimestamp() + duration_ms,
+            .theme = theme,
         });
     }
 
@@ -49,7 +52,7 @@ pub const ToastManager = struct {
         if (self.toasts.items.len == 0) return;
 
         try stdout.writeAll(ansi.hide_cursor);
-        var offset_y: u16 = 2;
+        var offset_y: u16 = 1;
 
         var i: usize = self.toasts.items.len;
         while (i > 0) {
@@ -61,7 +64,9 @@ pub const ToastManager = struct {
             const y = if (rows > offset_y) rows - offset_y else 1;
 
             try ansi.goto(stdout, y, x);
-            try stdout.print("\x1b[48;5;236m\x1b[38;5;159m  {s}  \x1b[0m", .{toast.text});
+            const span = style.Span.init(toast.text, toast.theme);
+            try span.render(stdout, 0.0);
+            try stdout.writeAll("\x1b[0m");
             offset_y += 1;
         }
     }

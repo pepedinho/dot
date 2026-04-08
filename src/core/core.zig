@@ -322,7 +322,7 @@ pub const Editor = struct {
                 const bounds = view.buf.getLineBounds(view.buf.gap_start);
                 if (self.clipboard) |old_clip| self.allocator.free(old_clip);
                 self.clipboard = try view.buf.getLogicalRange(self.allocator, bounds.start, bounds.end);
-                try self.toast_manager.push("Yanked 1 line", 2000);
+                try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = .Cyan, .bg = .Black, .bold = true });
                 self.needs_redraw = true;
             },
             .Past => {
@@ -332,10 +332,10 @@ pub const Editor = struct {
                     for (clip) |c| {
                         try view.buf.insertChar(c);
                     }
-                    try self.toast_manager.push("Pasted", 2000);
+                    try self.toast_manager.push("Pasted", 1500, .{ .fg = .Green, .bg = .Black, .bold = true });
                     self.needs_redraw = true;
                 } else {
-                    try self.toast_manager.push("Clipboard is empty", 2000);
+                    try self.toast_manager.push("Clipboard is empty!", 2000, .{ .fg = .White, .bg = .Red, .bold = true });
                     self.needs_redraw = true;
                 }
             },
