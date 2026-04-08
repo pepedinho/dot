@@ -15,4 +15,6 @@ pub fn loadStandardKeyBinds(editor: *Editor) !void {
     try editor.registerKeyBind('n', .NextSearchResult);
     try editor.registerKeyBind('N', .PrevSearchResult);
     try editor.registerKeyBind('u', .Undo);
+    try editor.registerKeyBind('y', .YankLine);
+    try editor.registerKeyBind('p', .Past);
 }

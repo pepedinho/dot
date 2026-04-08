@@ -103,6 +103,7 @@ pub const Editor = struct {
     scheduler: Scheduler = .{},
     /// Render engine used to render text to screen
     renderer: Renderer,
+    clipboard: ?[]u8,
     // ========================
     // Debug Part
     // ========================
@@ -131,6 +132,7 @@ pub const Editor = struct {
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
             .renderer = Renderer.init(allocator),
+            .clipboard = null,
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -177,6 +179,7 @@ pub const Editor = struct {
         self.cmd_buf.deinit(self.allocator);
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
+        if (self.clipboard) |c| self.allocator.free(c);
     }
 
     /// Push action in the `Editor.action_queue`
@@ -277,18 +280,22 @@ pub const Editor = struct {
                 self.needs_redraw = delete_nl;
             },
             .MoveLeft => {
+                try view.buf.history.commit();
                 view.buf.moveCursorLeft();
                 self.needs_redraw = false;
             },
             .MoveRight => {
+                try view.buf.history.commit();
                 view.buf.moveCursorRight();
                 self.needs_redraw = false;
             },
             .MoveDown => {
+                try view.buf.history.commit();
                 view.buf.moveCursorDown();
                 self.needs_redraw = false;
             },
             .MoveUp => {
+                try view.buf.history.commit();
                 view.buf.moveCursorUp();
                 self.needs_redraw = false;
             },
@@ -301,6 +308,21 @@ pub const Editor = struct {
                 if (view.is_readonly) return;
                 try self.pushAction(.MoveDown);
                 try self.pushAction(.{ .SetMode = .Insert });
+            },
+            .YankLine => {
+                const bounds = view.buf.getLineBounds(view.buf.gap_start);
+                if (self.clipboard) |old_clip| self.allocator.free(old_clip);
+                self.clipboard = try view.buf.getLogicalRange(self.allocator, bounds.start, bounds.end);
+            },
+            .Past => {
+                if (view.is_readonly) return;
+                if (self.clipboard) |clip| {
+                    try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
+                    for (clip) |c| {
+                        try view.buf.insertChar(c);
+                    }
+                    self.needs_redraw = true;
+                }
             },
             .CreatePop => |b| {
                 const pop_id = try self.createPop(b.pos, b.size, b.duration_ms);
