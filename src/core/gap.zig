@@ -339,8 +339,8 @@ pub const GapBuffer = struct {
     }
 
     /// Return the char at `logical_idx` O(1)
-    pub fn charAt(self: *GapBuffer, logical_idx: usize) ?u8 {
-        if (logical_idx > self.len()) return null;
+    pub fn charAt(self: *const GapBuffer, logical_idx: usize) ?u8 {
+        if (logical_idx >= self.len()) return null;
 
         if (logical_idx < self.gap_start) {
             return self.buffer[logical_idx];
@@ -350,7 +350,9 @@ pub const GapBuffer = struct {
         }
     }
 
-    /// Alocate and return a slice of gap buffer text
+    /// Allocate and return a slice of gap buffer text (the caller takes ownership)
+    /// TODO: use @memcpy instead of byte per byte iteration
+    /// see: https://github.com/pepedinho/dot/pull/26#discussion_r3051279747
     pub fn getLogicalRange(self: *const GapBuffer, allocator: std.mem.Allocator, start: usize, end: usize) ![]u8 {
         const safe_start = @min(start, self.len());
         const safe_end = @min(end, self.len());
@@ -361,7 +363,7 @@ pub const GapBuffer = struct {
 
         var i: usize = 0;
         while (i < result_len) : (i += 1) {
-            result[i] = self.charAt(safe_start + 1).?;
+            result[i] = self.charAt(safe_start + i).?;
         }
 
         return result;
