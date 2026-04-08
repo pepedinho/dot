@@ -65,6 +65,20 @@ pub const HistoryManager = struct {
         }
     }
 
+    pub fn recordBatchInsert(self: *HistoryManager, start_pos: usize, text: []const u8) !void {
+        try self.commit();
+
+        self.current_transaction = Transaction{ .edits = .empty };
+
+        for (text, 0..) |char, i| {
+            try self.current_transaction.?.edits.append(self.allocator, .{ .kind = .insert, .pos = start_pos + i, .char = char });
+        }
+
+        self.last_edit_time = std.time.milliTimestamp();
+
+        try self.commit();
+    }
+
     pub fn recordDelete(self: *HistoryManager, pos: usize, char: u8) !void {
         const now = std.time.milliTimestamp();
 

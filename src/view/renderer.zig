@@ -65,8 +65,10 @@ pub const Renderer = struct {
         try self.traceBorder(stdout, editor);
         try self.displayMode(stdout, editor, frame_alloc);
         try editor.renderAllPopup(stdout);
-        try self.placeCursor(stdout, editor, frame_alloc);
 
+        try editor.toast_manager.render(stdout, editor.win.cols, editor.win.rows);
+
+        try self.placeCursor(stdout, editor, frame_alloc);
         try stdout.writeAll(ansi.show_cursor);
     }
 
@@ -88,6 +90,8 @@ pub const Renderer = struct {
         try self.traceBorder(stdout, editor);
         try self.displayMode(stdout, editor, frame_alloc);
         try editor.renderAllPopup(stdout);
+
+        try editor.toast_manager.render(stdout, editor.win.cols, editor.win.rows);
         try self.placeCursor(stdout, editor, frame_alloc);
 
         try stdout.writeAll(ansi.show_cursor);
@@ -159,6 +163,7 @@ pub const Renderer = struct {
             }
         }
 
+        try editor.toast_manager.render(stdout, editor.win.cols, editor.win.rows);
         try ansi.goto(stdout, screen_y, screen_x);
         try stdout.writeAll(ansi.show_cursor);
     }

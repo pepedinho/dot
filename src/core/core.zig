@@ -12,6 +12,7 @@ const actions = @import("action.zig");
 const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
 
+const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
@@ -93,6 +94,7 @@ pub const Editor = struct {
     /// Is map to store multiple active Pops by their unique ID.
     /// With different lifetime and attributs
     pop_store: std.AutoHashMap(u32, pop.Pop),
+    toast_manager: ToastManager,
     /// Used to increment id for assign
     next_popup_id: u32 = 1,
     /// Store keybinds and theirs associated Action
@@ -103,6 +105,7 @@ pub const Editor = struct {
     scheduler: Scheduler = .{},
     /// Render engine used to render text to screen
     renderer: Renderer,
+    clipboard: ?[]u8,
     // ========================
     // Debug Part
     // ========================
@@ -131,6 +134,8 @@ pub const Editor = struct {
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
             .renderer = Renderer.init(allocator),
+            .clipboard = null,
+            .toast_manager = ToastManager.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -177,6 +182,8 @@ pub const Editor = struct {
         self.cmd_buf.deinit(self.allocator);
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
+        self.toast_manager.deinit();
+        if (self.clipboard) |c| self.allocator.free(c);
     }
 
     /// Push action in the `Editor.action_queue`
@@ -233,6 +240,11 @@ pub const Editor = struct {
                     self.needs_redraw = true;
                     self.is_dirty = true;
                 }
+
+                if (self.toast_manager.tick()) {
+                    self.needs_redraw = true;
+                    self.is_dirty = true;
+                }
             },
             .SetMode => |m| {
                 self.last_mode = self.mode;
@@ -277,18 +289,22 @@ pub const Editor = struct {
                 self.needs_redraw = delete_nl;
             },
             .MoveLeft => {
+                try view.buf.history.commit();
                 view.buf.moveCursorLeft();
                 self.needs_redraw = false;
             },
             .MoveRight => {
+                try view.buf.history.commit();
                 view.buf.moveCursorRight();
                 self.needs_redraw = false;
             },
             .MoveDown => {
+                try view.buf.history.commit();
                 view.buf.moveCursorDown();
                 self.needs_redraw = false;
             },
             .MoveUp => {
+                try view.buf.history.commit();
                 view.buf.moveCursorUp();
                 self.needs_redraw = false;
             },
@@ -301,6 +317,27 @@ pub const Editor = struct {
                 if (view.is_readonly) return;
                 try self.pushAction(.MoveDown);
                 try self.pushAction(.{ .SetMode = .Insert });
+            },
+            .YankLine => {
+                const bounds = view.buf.getLineBounds(view.buf.gap_start);
+                if (self.clipboard) |old_clip| self.allocator.free(old_clip);
+                self.clipboard = try view.buf.getLogicalRange(self.allocator, bounds.start, bounds.end);
+                try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = .Cyan, .bg = .Black, .bold = true });
+                self.needs_redraw = true;
+            },
+            .Paste => {
+                if (view.is_readonly) return;
+                if (self.clipboard) |clip| {
+                    for (clip) |c| {
+                        try view.buf.insertChar(c);
+                    }
+                    try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
+                    try self.toast_manager.push("Pasted", 1500, .{ .fg = .Green, .bg = .Black, .bold = true });
+                    self.needs_redraw = true;
+                } else {
+                    try self.toast_manager.push("Clipboard is empty!", 2000, .{ .fg = .White, .bg = .Red, .bold = true });
+                    self.needs_redraw = true;
+                }
             },
             .CreatePop => |b| {
                 const pop_id = try self.createPop(b.pos, b.size, b.duration_ms);

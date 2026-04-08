@@ -23,6 +23,8 @@ pub const Action = union(enum) {
     UpdateDebugBuffer: *buffer.GapBuffer,
     NextSearchResult,
     PrevSearchResult,
+    YankLine,
+    Paste,
     Undo,
     // SplitView,
     // GotoView: u8,
