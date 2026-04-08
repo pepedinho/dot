@@ -270,7 +270,7 @@ pub const Editor = struct {
                 if (view.is_readonly or view.buf.gap_start == 0) return;
 
                 const char_to_delete = view.buf.buffer[view.buf.gap_start - 1];
-                try view.buf.history.recordDelete(view.buf.gap_start, char_to_delete);
+                try view.buf.history.recordDelete(view.buf.gap_start - 1, char_to_delete);
 
                 const delete_nl = char_to_delete == '\n';
                 view.buf.backspace();
