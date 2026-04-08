@@ -7,6 +7,7 @@ const ansi = @import("ansi.zig");
 const pop = @import("pop.zig");
 
 const MODE = [_][]const u8{ "NORMAL", "INSERT", "COMMAND", "SEARCH" };
+const TAB_SIZE = 4;
 
 pub const AnimatedRegion = struct {
     x: usize,
@@ -127,7 +128,6 @@ pub const Renderer = struct {
         for (parts) |part| {
             for (part) |c| {
                 if (c == '\t') {
-                    const TAB_SIZE = 8;
                     for (0..TAB_SIZE) |_| {
                         if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
                             try stdout.writeAll(" ");
@@ -317,7 +317,6 @@ pub const Renderer = struct {
                     current_row += 1;
                     current_col = 1;
                 } else if (c == '\t') {
-                    const TAB_SIZE = 8;
                     for (0..TAB_SIZE) |_| {
                         if (current_row > view.row_offset) {
                             if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {

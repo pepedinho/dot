@@ -1,7 +1,7 @@
 const std = @import("std");
 const utils = @import("../utils.zig");
 
-const TAB_SIZE: usize = 8;
+const TAB_SIZE: usize = 4;
 
 pub const Mark = struct {
     start: usize, // physical index
