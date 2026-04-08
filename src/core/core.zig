@@ -608,10 +608,10 @@ pub const Editor = struct {
 
             try stdout.flush();
 
-            const key = try keyboard.readKey();
+            var key = try keyboard.readKey();
             try self.scheduler.update(&self.action_queue);
 
-            if (key != .none) {
+            while (key != .none) {
                 self.is_dirty = true;
                 switch (self.mode) {
                     .Normal => {
@@ -653,6 +653,7 @@ pub const Editor = struct {
                         }
                     },
                 }
+                key = try keyboard.readKey();
             }
 
             while (self.action_queue.pop()) |act| {
