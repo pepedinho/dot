@@ -332,4 +332,62 @@ pub const GapBuffer = struct {
         }
         self.jumpToLogical(target);
     }
+
+    /// Return real size (without gap)
+    pub fn len(self: *const GapBuffer) usize {
+        return self.buffer.len - (self.gap_end - self.gap_start);
+    }
+
+    /// Return the char at `logical_idx` O(1)
+    pub fn charAt(self: *const GapBuffer, logical_idx: usize) ?u8 {
+        if (logical_idx >= self.len()) return null;
+
+        if (logical_idx < self.gap_start) {
+            return self.buffer[logical_idx];
+        } else {
+            const gap_size = self.gap_end - self.gap_start;
+            return self.buffer[logical_idx + gap_size];
+        }
+    }
+
+    /// Allocate and return a slice of gap buffer text (the caller takes ownership)
+    /// TODO: use @memcpy instead of byte per byte iteration
+    /// see: https://github.com/pepedinho/dot/pull/26#discussion_r3051279747
+    pub fn getLogicalRange(self: *const GapBuffer, allocator: std.mem.Allocator, start: usize, end: usize) ![]u8 {
+        const safe_start = @min(start, self.len());
+        const safe_end = @min(end, self.len());
+        if (safe_start >= safe_end) return allocator.alloc(u8, 0);
+
+        const result_len = safe_end - safe_start;
+        var result = try allocator.alloc(u8, result_len);
+
+        var i: usize = 0;
+        while (i < result_len) : (i += 1) {
+            result[i] = self.charAt(safe_start + i).?;
+        }
+
+        return result;
+    }
+
+    /// Find logical bounds of the line corresponding to `logical_idx`
+    pub fn getLineBounds(self: *const GapBuffer, logical_idx: usize) struct { start: usize, end: usize } {
+        const text_len = self.len();
+        if (text_len == 0) return .{ .start = 0, .end = 0 };
+
+        var start = @min(logical_idx, text_len - 1);
+        while (start > 0 and self.charAt(start - 1).? != '\n') {
+            start -= 1;
+        }
+
+        var end = @min(logical_idx, text_len);
+        while (end < text_len and self.charAt(end).? != '\n') {
+            end += 1;
+        }
+
+        if (end < text_len and self.charAt(end).? == '\n') {
+            end += 1;
+        }
+
+        return .{ .start = start, .end = end };
+    }
 };
