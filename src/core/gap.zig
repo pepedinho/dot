@@ -1,5 +1,6 @@
 const std = @import("std");
 const utils = @import("../utils.zig");
+const HistoryManager = @import("history.zig").HistoryManager;
 
 const TAB_SIZE: usize = 4;
 
@@ -24,6 +25,8 @@ pub const GapBuffer = struct {
     /// This field is used by R-engine to colorize text frames
     highlight: std.ArrayList(Mark),
 
+    history: HistoryManager,
+
     const INITIAL_CAPACITY = 1024;
 
     /// Initializes an empty Gap Buffer with an initial capacity.
@@ -38,6 +41,7 @@ pub const GapBuffer = struct {
             .gap_end = buf.len,
             .filename = null,
             .highlight = .empty,
+            .history = HistoryManager.init(allocator),
         };
     }
 
@@ -83,6 +87,7 @@ pub const GapBuffer = struct {
             .gap_end = total_capacity,
             .filename = name,
             .highlight = .empty,
+            .history = HistoryManager.init(allocator),
         };
     }
 
@@ -108,6 +113,7 @@ pub const GapBuffer = struct {
             self.allocator.free(f);
         }
         self.highlight.deinit(self.allocator);
+        self.history.deinit();
         self.allocator.free(self.buffer);
     }
 
@@ -278,15 +284,19 @@ pub const GapBuffer = struct {
     }
 
     pub fn jumpToLogical(self: *GapBuffer, target_logical: usize) void {
-        if (target_logical == self.gap_start) return;
+        const logical_len = self.buffer.len - (self.gap_end - self.gap_start);
 
-        if (target_logical < self.gap_start) {
-            const shift = self.gap_start - target_logical;
-            std.mem.copyBackwards(u8, self.buffer[self.gap_end - shift .. self.gap_end], self.buffer[target_logical..self.gap_start]);
+        const safe_target = @min(target_logical, logical_len);
+
+        if (safe_target == self.gap_start) return;
+
+        if (safe_target < self.gap_start) {
+            const shift = self.gap_start - safe_target;
+            std.mem.copyBackwards(u8, self.buffer[self.gap_end - shift .. self.gap_end], self.buffer[safe_target..self.gap_start]);
             self.gap_start -= shift;
             self.gap_end -= shift;
         } else {
-            const shift = target_logical - self.gap_start;
+            const shift = safe_target - self.gap_start;
             std.mem.copyForwards(u8, self.buffer[self.gap_start .. self.gap_start + shift], self.buffer[self.gap_end .. self.gap_end + shift]);
             self.gap_start += shift;
             self.gap_end += shift;

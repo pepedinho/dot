@@ -101,6 +101,7 @@ pub const Editor = struct {
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
     scheduler: Scheduler = .{},
+    /// Render engine used to render text to screen
     renderer: Renderer,
     // ========================
     // Debug Part
@@ -242,23 +243,36 @@ pub const Editor = struct {
                     self.cmd_buf.clearRetainingCapacity();
                     view.buf.highlight.clearRetainingCapacity();
                 }
+
+                if (self.mode == .Insert and m != .Insert) {
+                    try view.buf.history.commit();
+                }
+
                 self.mode = m;
                 self.needs_redraw = true;
             },
             .Quit => self.quit(),
             .InsertChar => |c| {
                 if (view.is_readonly) return;
+
+                try view.buf.history.recordInsert(view.buf.gap_start, c);
+
                 try view.buf.insertChar(c);
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
                 if (view.is_readonly) return;
+                try view.buf.history.recordInsert(view.buf.gap_start, '\n');
                 try view.buf.insertChar('\n');
                 self.needs_redraw = true;
             },
             .DeleteChar => {
-                if (view.is_readonly) return;
-                const delete_nl = view.buf.gap_start > 0 and view.buf.buffer[view.buf.gap_start - 1] == '\n';
+                if (view.is_readonly or view.buf.gap_start == 0) return;
+
+                const char_to_delete = view.buf.buffer[view.buf.gap_start - 1];
+                try view.buf.history.recordDelete(view.buf.gap_start - 1, char_to_delete);
+
+                const delete_nl = char_to_delete == '\n';
                 view.buf.backspace();
                 self.needs_redraw = delete_nl;
             },
@@ -343,6 +357,11 @@ pub const Editor = struct {
                 if (target_view) |v| {
                     try self.updateDebugPanel(debug_buf, v);
                 }
+            },
+            .Undo => {
+                if (view.is_readonly) return;
+                try view.buf.history.undo(view.buf);
+                self.needs_redraw = true;
             },
         }
     }

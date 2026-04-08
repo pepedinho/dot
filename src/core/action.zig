@@ -23,6 +23,7 @@ pub const Action = union(enum) {
     UpdateDebugBuffer: *buffer.GapBuffer,
     NextSearchResult,
     PrevSearchResult,
+    Undo,
     // SplitView,
     // GotoView: u8,
     Quit,
