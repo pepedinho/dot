@@ -408,7 +408,8 @@ pub const Editor = struct {
                     idw += 1;
                 }
 
-                while (std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) == null and idw < len) {
+                //BUG: .? is not safe and cause segfault if we press 'w' at the end of file
+                while (idw < len and std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) == null) {
                     idw += 1;
                 }
                 view.buf.jumpToLogical(idw);
