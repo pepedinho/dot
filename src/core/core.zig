@@ -746,6 +746,7 @@ pub const Editor = struct {
         for (self.buffers.items, 0..) |b, i| {
             const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
             w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
+            w.print("len: {d}\n", .{b.len()}) catch {};
             w.print("\tfilename -> {s}\n", .{if (b.filename) |f| f else "none"}) catch {};
         }
         w.print("\n", .{}) catch {};
