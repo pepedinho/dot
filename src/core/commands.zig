@@ -3,6 +3,7 @@ const core = @import("core.zig");
 const buffer = @import("gap.zig");
 const utils = @import("../utils.zig");
 const fs = @import("../fs/filesystem.zig");
+const api = @import("../api/api.zig");
 
 const Editor = core.Editor;
 
@@ -184,6 +185,21 @@ fn cmdClose(ed: *Editor, args: []const u8) !void {
     ed.needs_redraw = true;
 }
 
+fn cmdSource(ed: *Editor, args: []const u8) !void {
+    if (ed.vm) |L| {
+        const c_path = try std.fmt.allocPrint(ed.allocator, "{s}", .{args});
+        defer ed.allocator.free(c_path);
+
+        if (api.c.luaL_loadfilex(L, c_path.ptr, null) != 0 or api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
+            const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+            try ed.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red, .bold = true });
+            api.c.lua_settop(L, -2);
+        } else {
+            try ed.toast_manager.push("Lua script loaded!", 2000, .{ .fg = .Green, .bg = .Black });
+        }
+    }
+}
+
 pub fn registerBuiltins(map: *CommandsMap) !void {
     try map.register("q", cmdQ);
     try map.register("w", cmdW);
@@ -198,4 +214,5 @@ pub fn registerBuiltins(map: *CommandsMap) !void {
     try map.register("bnext", cmdBnext);
     try map.register("debug", cmdDebug);
     try map.register("close", cmdClose);
+    try map.register("source", cmdSource);
 }

@@ -30,6 +30,7 @@ pub fn main() !void {
 
     var dot = try Editor.init(allocator);
     defer dot.deinit();
+    dot.startLua();
     try dot.loadStandardKeyBinds();
 
     var args = try std.process.argsWithAllocator(allocator);
