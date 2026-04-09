@@ -401,13 +401,14 @@ pub const Editor = struct {
                 self.needs_redraw = true;
             },
             .EOW => {
+                const sep = " .(){}[];,";
                 var idw = view.buf.gap_start;
                 const len = view.buf.len();
-                while (view.buf.charAt(idw) == ' ') {
+                while (std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) != null) {
                     idw += 1;
                 }
 
-                while (view.buf.charAt(idw) != ' ' and idw < len) {
+                while (std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) == null and idw < len) {
                     idw += 1;
                 }
                 view.buf.jumpToLogical(idw);
