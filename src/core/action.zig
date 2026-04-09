@@ -26,6 +26,8 @@ pub const Action = union(enum) {
     YankLine,
     Paste,
     Undo,
+    /// end of word
+    EOW,
     // SplitView,
     // GotoView: u8,
     Quit,

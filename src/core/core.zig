@@ -400,6 +400,20 @@ pub const Editor = struct {
                 try view.buf.history.undo(view.buf);
                 self.needs_redraw = true;
             },
+            .EOW => {
+                const sep = " .(){}[];,";
+                var idw = view.buf.gap_start;
+                const len = view.buf.len();
+                while (std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) != null) {
+                    idw += 1;
+                }
+
+                //BUG: .? is not safe and cause segfault if we press 'w' at the end of file
+                while (idw < len and std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) == null) {
+                    idw += 1;
+                }
+                view.buf.jumpToLogical(idw);
+            },
         }
     }
 
