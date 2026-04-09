@@ -400,6 +400,18 @@ pub const Editor = struct {
                 try view.buf.history.undo(view.buf);
                 self.needs_redraw = true;
             },
+            .EOW => {
+                var idw = view.buf.gap_start;
+                const len = view.buf.len();
+                while (view.buf.charAt(idw) == ' ') {
+                    idw += 1;
+                }
+
+                while (view.buf.charAt(idw) != ' ' and idw < len) {
+                    idw += 1;
+                }
+                view.buf.jumpToLogical(idw);
+            },
         }
     }
 
