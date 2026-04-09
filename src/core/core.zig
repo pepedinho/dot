@@ -155,7 +155,6 @@ pub const Editor = struct {
 
         try commands.registerBuiltins(&ed.cmd_map);
         try ed.scheduler.add(.Tick, 33);
-        // ed.vm = api.init(&ed) catch null;
         return ed;
     }
     /// Init lua VM
