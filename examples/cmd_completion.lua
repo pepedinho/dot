@@ -5,6 +5,31 @@ local current_dir = ""
 local cmd_offset = 10
 local prev_path = ""
 
+local colors = {
+	blue = "\27[34m",
+	green = "\27[32m",
+	yellow = "\27[33m",
+	white = "\27[37m",
+}
+local function get_file_info(filename)
+	if filename:match("[/\\]$") then
+		return "", colors.blue
+	end
+
+	local ext = filename:match("^.+(%..+)$") or ""
+	if ext == ".lua" then
+		return "", colors.blue
+	end
+	if ext == ".zig" then
+		return "", colors.yellow
+	end
+	if ext == ".c" then
+		return "", colors.white
+	end
+
+	return "", colors.white
+end
+
 dot.hook_on("CmdTab", function()
 	local cmd = dot.get_cmdline()
 	local cmd_type, type_path = string.match(cmd, "^(%w+)%s+(.*)$")
@@ -19,17 +44,24 @@ dot.hook_on("CmdTab", function()
 			current_matches = {}
 			for _, filename in ipairs(files) do
 				if string.sub(filename, 1, #prefix) == prefix then
-					table.insert(current_matches, filename)
+					local icon_char, icon_col = get_file_info(filename)
+					table.insert(current_matches, {
+						text = filename,
+						icon = icon_char,
+						icon_color = icon_col,
+					})
 				end
 			end
 
-			table.sort(current_matches)
+			table.sort(current_matches, function(a, b)
+				return a.text < b.text
+			end)
 			if #current_matches == 0 then
 				return true
 			end
 
 			if #current_matches == 1 then
-				dot.set_cmdline(cmd_type .. " " .. current_dir .. current_matches[1])
+				dot.set_cmdline(cmd_type .. " " .. current_dir .. current_matches[1].text)
 				return true
 			end
 
@@ -51,7 +83,6 @@ dot.hook_on("CmdTab", function()
 		local win = dot.get_win_size()
 		local row = win[1]
 		local col = string.len(cmd) + cmd_offset
-		dot.print("current y = " .. row .. "| current x = " .. col)
 		dot.show_pum(col, row - 1, current_matches, selected_index)
 		return true
 	end
@@ -59,7 +90,7 @@ end)
 
 dot.hook_on("CmdEnter", function()
 	if is_menu_open then
-		local chosen_file = current_matches[selected_index + 1]
+		local chosen_file = current_matches[selected_index + 1].text
 		local cmd_type = string.match(dot.get_cmdline(), "^(%w+)%s+")
 
 		dot.set_cmdline(cmd_type .. " " .. current_dir .. chosen_file)
