@@ -1,6 +1,7 @@
 const std = @import("std");
 const core = @import("../core/core.zig");
 const style = @import("../view/style.zig");
+const job = @import("../core/worker.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -74,6 +75,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "get_win_size", api_get_win_size);
     registerFn(L, "add_style", api_add_style);
     registerFn(L, "clear_style", api_clear_style);
+    registerFn(L, "spawn", api_spawn);
 
     c.lua_setglobal(L, "dot");
     return L;
@@ -447,5 +449,28 @@ export fn api_clear_style(L: ?*c.lua_State) c_int {
     editor.getActiveView().buf.extmarks.clearRetainingCapacity();
     editor.needs_redraw = true;
     editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_spawn(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const cmd_ptr = c.luaL_checklstring(L, 1, null);
+    const cmd_str = std.mem.span(cmd_ptr);
+
+    c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
+
+    const cmd_copy = editor.allocator.dupe(u8, cmd_str) catch return 0;
+
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+
+    const thread = std.Thread.spawn(.{}, job.worker, .{ &editor.job_manager, editor.allocator, cmd_copy, ref_id }) catch {
+        editor.allocator.free(cmd_copy);
+        c.luaL_unref(L, c.LUA_REGISTRYINDEX, ref_id);
+        return 0;
+    };
+
+    thread.detach();
+
     return 0;
 }

@@ -81,3 +81,8 @@ function dot.add_highlight(row, col, length, style) end
 
 ---Cleans all stains from the active buffer.
 function dot.clear_highlights() end
+
+---Executes a system command in the background without blocking the editor.
+---@param cmd string The command to execute (e.g., "grep -r TODO .")
+---@param callback fun(success: boolean, output: string?) The function called at the end.
+function dot.spawn(cmd, callback) end
