@@ -11,7 +11,9 @@ const fs = @import("../fs/filesystem.zig");
 const actions = @import("action.zig");
 const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
+const api = @import("../api/api.zig");
 
+const c = api.c;
 const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
@@ -117,6 +119,13 @@ pub const Editor = struct {
     last_fps: usize = 0,
     last_fps_time: i64 = 0,
     cmd_map: CommandsMap,
+    // =======================
+    // LUA VM
+    // =======================
+    /// Lua vm instance
+    vm: ?*c.lua_State = null,
+    /// hooks registry
+    hooks: std.StringHashMap(std.ArrayList(c_int)),
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -136,6 +145,7 @@ pub const Editor = struct {
             .renderer = Renderer.init(allocator),
             .clipboard = null,
             .toast_manager = ToastManager.init(allocator),
+            .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -154,6 +164,10 @@ pub const Editor = struct {
         try ed.scheduler.add(.Tick, 33);
         return ed;
     }
+    /// Init lua VM
+    pub fn startLua(self: *Editor) void {
+        self.vm = api.init(self) catch null;
+    }
 
     /// Return the `View` at index 'active_view_idx'
     pub fn getActiveView(self: *Editor) *pane.View {
@@ -166,6 +180,13 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
+        if (self.vm) |L| c.lua_close(L);
+        var it_hook = self.hooks.iterator();
+        while (it_hook.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.hooks.deinit();
         var it = self.pop_store.valueIterator();
         while (it.next()) |v| {
             v.deinit();
@@ -183,7 +204,7 @@ pub const Editor = struct {
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
         self.toast_manager.deinit();
-        if (self.clipboard) |c| self.allocator.free(c);
+        if (self.clipboard) |cl| self.allocator.free(cl);
     }
 
     /// Push action in the `Editor.action_queue`
@@ -264,12 +285,12 @@ pub const Editor = struct {
                 self.needs_redraw = true;
             },
             .Quit => self.quit(),
-            .InsertChar => |c| {
+            .InsertChar => |ch| {
                 if (view.is_readonly) return;
 
-                try view.buf.history.recordInsert(view.buf.gap_start, c);
+                try view.buf.history.recordInsert(view.buf.gap_start, ch);
 
-                try view.buf.insertChar(c);
+                try view.buf.insertChar(ch);
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
@@ -328,8 +349,8 @@ pub const Editor = struct {
             .Paste => {
                 if (view.is_readonly) return;
                 if (self.clipboard) |clip| {
-                    for (clip) |c| {
-                        try view.buf.insertChar(c);
+                    for (clip) |cl| {
+                        try view.buf.insertChar(cl);
                     }
                     try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
                     try self.toast_manager.push("Pasted", 1500, .{ .fg = .Green, .bg = .Black, .bold = true });
@@ -346,8 +367,8 @@ pub const Editor = struct {
                 }
                 self.needs_redraw = true;
             },
-            .CommandChar => |c| {
-                try self.cmd_buf.append(self.allocator, c);
+            .CommandChar => |ch| {
+                try self.cmd_buf.append(self.allocator, ch);
                 if (self.mode == .Search) {
                     try view.buf.find(self.cmd_buf.items);
                 }
@@ -513,6 +534,8 @@ pub const Editor = struct {
     /// Save current buffer as associated buffer filename
     /// if `buffers[current].filename` is null display an error popup
     pub fn saveFile(self: *Editor) !void {
+        if (self.triggerHook("BufWritePre")) return;
+
         const current_buf_idx = self.getCurrentBufferIdx();
         const buf = self.buffers.items[current_buf_idx];
         const name = buf.filename orelse {
@@ -667,8 +690,8 @@ pub const Editor = struct {
                 switch (self.mode) {
                     .Normal => {
                         switch (key) {
-                            .ascii => |c| {
-                                if (self.key_binds.get(c)) |a| {
+                            .ascii => |ch| {
+                                if (self.key_binds.get(ch)) |a| {
                                     try self.pushAction(a);
                                 }
                             },
@@ -682,7 +705,7 @@ pub const Editor = struct {
                     .Insert => {
                         switch (key) {
                             .escape => try self.pushAction(.{ .SetMode = .Normal }),
-                            .ascii => |c| try self.pushAction(.{ .InsertChar = c }),
+                            .ascii => |ch| try self.pushAction(.{ .InsertChar = ch }),
                             .enter => try self.pushAction(.InsertNewLine),
                             .backspace => try self.pushAction(.DeleteChar),
                             .left => try self.pushAction(.MoveLeft),
@@ -695,8 +718,8 @@ pub const Editor = struct {
                     .Command, .Search => {
                         switch (key) {
                             .escape => try self.pushAction(.{ .SetMode = .Normal }),
-                            .ascii => |c| {
-                                try self.pushAction(.{ .CommandChar = c });
+                            .ascii => |ch| {
+                                try self.pushAction(.{ .CommandChar = ch });
                             },
                             .backspace => try self.pushAction(.CommandBackspace),
                             .enter => try self.pushAction(.ExecuteCommand),
@@ -738,6 +761,7 @@ pub const Editor = struct {
         for (self.buffers.items, 0..) |b, i| {
             const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
             w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
+            w.print("len: {d}\n", .{b.len()}) catch {};
             w.print("\tfilename -> {s}\n", .{if (b.filename) |f| f else "none"}) catch {};
         }
         w.print("\n", .{}) catch {};
@@ -772,10 +796,34 @@ pub const Editor = struct {
         if (count == 0) w.print("(empty)\n", .{}) catch {};
 
         const final_text = fbs.getWritten();
-        for (final_text) |c| {
-            debug_buf.insertChar(c) catch {};
+        for (final_text) |ch| {
+            debug_buf.insertChar(ch) catch {};
         }
         v.is_dirty = true;
         self.is_dirty = true;
+    }
+
+    pub fn triggerHook(self: *Editor, hook_name: []const u8) bool {
+        const L = self.vm orelse return false;
+        var prevent_default = false;
+
+        if (self.hooks.get(hook_name)) |callback| {
+            for (callback.items) |ref_id| {
+                _ = api.c.lua_rawgeti(L, api.c.LUA_REGISTRYINDEX, ref_id);
+                if (api.c.lua_pcallk(L, 0, 1, 0, 0, null) != 0) {
+                    const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                    self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
+                    api.c.lua_pop(L, 1);
+                } else {
+                    if (api.c.lua_isboolean(L, -1) != false) {
+                        if (api.c.lua_toboolean(L, -1) != 0) {
+                            prevent_default = true;
+                        }
+                    }
+                    api.c.lua_pop(L, 1);
+                }
+            }
+        }
+        return prevent_default;
     }
 };
