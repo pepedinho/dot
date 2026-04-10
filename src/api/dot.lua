@@ -1,9 +1,14 @@
 ---@meta
--- Definition file for the Pepe Dot Lua API.
+-- Definition file for the Dot Lua API.
 -- Do not execute this file. It is solely used for LSP autocompletion.
 
 ---@class DotApi
 dot = {}
+
+---@class PumItem
+---@field text string The main text of the item.
+---@field icon? string (Optional) A graphical unicode icon (e.g., Nerd Font).
+---@field icon_color? string (Optional) ANSI color code for icon.
 
 ---Displays a temporary notification (Toast) in the bottom right corner of the screen.
 ---@param message string The notification text to display.
@@ -60,9 +65,19 @@ function dot.read_dir(path) end
 ---Displays the Popup Menu (PUM) on the screen for autocomplétion or selection.
 ---@param x integer The X position (column) where the menu should be drawn.
 ---@param y integer The Y position (row) where the menu should be drawn (the menu expands upwards).
----@param items string[] The array of choices to display.
+---@param items (string|PumItem)[] The array of choices to display. Can be strings or tables with text and icon.
 ---@param selected_index integer The index of the highlighted item (Note: 0-indexed to match the Zig backend).
 function dot.show_pum(x, y, items, selected_index) end
 
 ---Hides and clears the active Popup Menu (PUM).
 function dot.hide_pum() end
+
+---Applies a visual style to a portion of text.
+---@param row integer The line (1-indexed)
+---@param col integer The starting column (1-indexed)
+---@param length integer The number of characters to color
+---@param style {fg?: integer, bg?: integer, bold?: boolean, italic?: boolean} Style definition
+function dot.add_highlight(row, col, length, style) end
+
+---Cleans all stains from the active buffer.
+function dot.clear_highlights() end

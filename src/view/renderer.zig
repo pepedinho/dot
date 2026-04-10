@@ -306,10 +306,11 @@ pub const Renderer = struct {
 
                 const logical_idx = if (p_idx == 0) c_idx else view.buf.gap_start + c_idx;
 
-                var is_highlighted = false;
-                for (view.buf.highlight.items) |mark| {
-                    if (logical_idx >= mark.start and logical_idx < mark.end) {
-                        is_highlighted = true;
+                // var is_highlighted = false;
+                var active_style: ?style.Style = null;
+                for (view.buf.extmarks.items) |mark| {
+                    if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
+                        active_style = mark.style;
                         break;
                     }
                 }
@@ -336,9 +337,9 @@ pub const Renderer = struct {
                 } else {
                     if (current_row > view.row_offset) {
                         if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                            if (is_highlighted) try stdout.writeAll("\x1b[43;30m");
+                            if (active_style) |s| try s.toAnsi(stdout);
                             try stdout.writeAll(&[_]u8{c});
-                            if (is_highlighted) try stdout.writeAll("\x1b[m");
+                            if (active_style != null) try stdout.writeAll("\x1b[m");
                         }
                     }
                     current_col += 1;

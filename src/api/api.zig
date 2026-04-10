@@ -1,5 +1,6 @@
 const std = @import("std");
 const core = @import("../core/core.zig");
+const style = @import("../view/style.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -9,6 +10,47 @@ pub const c = @cImport({
 
 var global_editor: ?*core.Editor = null;
 
+fn registerFn(L: ?*c.lua_State, name: [:0]const u8, func: c.lua_CFunction) void {
+    c.lua_pushcfunction(L, func);
+    c.lua_setfield(L, -2, name.ptr);
+}
+
+fn getIntField(L: ?*c.lua_State, table_idx: c_int, key: [:0]const u8) ?u8 {
+    _ = c.lua_getfield(L, table_idx, key.ptr);
+    defer c.lua_pop(L, 1);
+
+    if (c.lua_isinteger(L, -1) != 0) {
+        return @as(u8, @intCast(c.lua_tointegerx(L, -1, null)));
+    }
+    return null;
+}
+
+fn getBoolField(L: ?*c.lua_State, table_idx: c_int, key: [:0]const u8) ?bool {
+    _ = c.lua_getfield(L, table_idx, key.ptr); // Pousse la valeur en -1
+    defer c.lua_pop(L, 1); // On nettoie
+
+    if (c.lua_isboolean(L, -1) != false) {
+        return (c.lua_toboolean(L, -1) != 0);
+    }
+    return null;
+}
+
+fn get_lua_string(L: ?*c.lua_State, allocator: std.mem.Allocator) ?[]const u8 {
+    if (c.lua_isstring(L, -1) == 0) return null;
+
+    var len: usize = 0;
+    const ptr = c.lua_tolstring(L, -1, &len);
+    return allocator.dupe(u8, ptr[0..len]) catch null;
+}
+
+fn get_table_string_field(L: ?*c.lua_State, allocator: std.mem.Allocator, field_name: [:0]const u8) ?[]const u8 {
+    _ = c.lua_getfield(L, -1, field_name.ptr);
+
+    defer c.lua_pop(L, 1);
+
+    return get_lua_string(L, allocator);
+}
+
 pub fn init(editor: *core.Editor) !*c.lua_State {
     global_editor = editor;
 
@@ -17,44 +59,21 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     c.luaL_openlibs(L);
     c.lua_newtable(L);
 
-    c.lua_pushcfunction(L, api_print);
-    c.lua_setfield(L, -2, "print");
-
-    c.lua_pushcfunction(L, api_insert);
-    c.lua_setfield(L, -2, "insert");
-
-    c.lua_pushcfunction(L, api_move_right);
-    c.lua_setfield(L, -2, "move_right");
-
-    c.lua_pushcfunction(L, api_get_cursor);
-    c.lua_setfield(L, -2, "get_cursor");
-
-    c.lua_pushcfunction(L, api_get_lines);
-    c.lua_setfield(L, -2, "get_lines");
-
-    c.lua_pushcfunction(L, api_set_lines);
-    c.lua_setfield(L, -2, "set_lines");
-
-    c.lua_pushcfunction(L, api_hook_on);
-    c.lua_setfield(L, -2, "hook_on");
-
-    c.lua_pushcfunction(L, api_show_pum);
-    c.lua_setfield(L, -2, "show_pum");
-
-    c.lua_pushcfunction(L, api_hide_pum);
-    c.lua_setfield(L, -2, "hide_pum");
-
-    c.lua_pushcfunction(L, api_read_dir);
-    c.lua_setfield(L, -2, "read_dir");
-
-    c.lua_pushcfunction(L, api_get_cmdline);
-    c.lua_setfield(L, -2, "get_cmdline");
-
-    c.lua_pushcfunction(L, api_set_cmdline);
-    c.lua_setfield(L, -2, "set_cmdline");
-
-    c.lua_pushcfunction(L, api_get_win_size);
-    c.lua_setfield(L, -2, "get_win_size");
+    registerFn(L, "print", api_print);
+    registerFn(L, "insert", api_insert);
+    registerFn(L, "move_right", api_move_right);
+    registerFn(L, "get_cursor", api_get_cursor);
+    registerFn(L, "get_lines", api_get_lines);
+    registerFn(L, "set_lines", api_set_lines);
+    registerFn(L, "hook_on", api_hook_on);
+    registerFn(L, "show_pum", api_show_pum);
+    registerFn(L, "hide_pum", api_hide_pum);
+    registerFn(L, "read_dir", api_read_dir);
+    registerFn(L, "get_cmdline", api_get_cmdline);
+    registerFn(L, "set_cmdline", api_set_cmdline);
+    registerFn(L, "get_win_size", api_get_win_size);
+    registerFn(L, "add_style", api_add_style);
+    registerFn(L, "clear_style", api_clear_style);
 
     c.lua_setglobal(L, "dot");
     return L;
@@ -279,14 +298,31 @@ export fn api_show_pum(L: ?*c.lua_State) c_int {
 
     while (i <= table_len) : (i += 1) {
         _ = c.lua_rawgeti(L, 3, i);
-        if (c.lua_isstring(L, -1) != 0) {
-            var str_len: usize = 0;
-            const item_str = c.lua_tolstring(L, -1, &str_len);
+        defer c.lua_pop(L, 1);
 
-            const copy = editor.allocator.dupe(u8, item_str[0..str_len]) catch continue;
-            editor.pum.items.append(editor.allocator, copy) catch {};
+        var text_copy: ?[]const u8 = null;
+        var icon_copy: ?[]const u8 = null;
+        var color_copy: ?[]const u8 = null;
+
+        if (c.lua_istable(L, -1)) {
+            text_copy = get_table_string_field(L, editor.allocator, "text");
+            icon_copy = get_table_string_field(L, editor.allocator, "icon");
+            color_copy = get_table_string_field(L, editor.allocator, "icon_color");
+        } else {
+            text_copy = get_lua_string(L, editor.allocator);
         }
-        c.lua_pop(L, 1);
+
+        if (text_copy) |txt| {
+            editor.pum.items.append(editor.allocator, .{
+                .text = txt,
+                .icon = icon_copy,
+                .icon_color = color_copy,
+            }) catch {
+                editor.allocator.free(txt);
+                if (icon_copy) |icn| editor.allocator.free(icn);
+                if (color_copy) |clr| editor.allocator.free(clr);
+            };
+        }
     }
 
     editor.pum.x = x;
@@ -372,4 +408,44 @@ export fn api_get_win_size(L: ?*c.lua_State) c_int {
     c.lua_rawseti(L, -2, 2);
 
     return 1;
+}
+
+export fn api_add_style(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
+    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+
+    c.luaL_checktype(L, 4, c.LUA_TTABLE);
+
+    var hl_style = style.Style{};
+
+    if (getIntField(L, 4, "fg")) |fg_val| hl_style.fg = @enumFromInt(fg_val);
+    if (getIntField(L, 4, "bg")) |bg_val| hl_style.bg = @enumFromInt(bg_val);
+    if (getBoolField(L, 4, "bold")) |bold_val| hl_style.bold = bold_val;
+    if (getBoolField(L, 4, "italic")) |italic_val| hl_style.italic = italic_val;
+
+    const start_idx = view.buf.getLogicalFromRowCol(row, col);
+    const end_idx = start_idx + length;
+
+    view.buf.extmarks.append(editor.allocator, .{
+        .logical_start = start_idx,
+        .logical_end = end_idx,
+        .style = hl_style,
+    }) catch {};
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_clear_style(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    _ = L;
+    editor.getActiveView().buf.extmarks.clearRetainingCapacity();
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
 }
