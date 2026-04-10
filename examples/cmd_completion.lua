@@ -34,7 +34,7 @@ dot.hook_on("CmdTab", function()
 	local cmd = dot.get_cmdline()
 	local cmd_type, type_path = string.match(cmd, "^(%w+)%s+(.*)$")
 
-	if cmd_type == "open" then
+	if cmd_type == "open" or cmd_type == "source" then
 		if not is_menu_open then
 			current_dir = string.match(type_path, "^(.*[/\\])") or ""
 			local prefix = string.sub(type_path, #current_dir + 1)

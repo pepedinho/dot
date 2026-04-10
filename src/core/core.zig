@@ -23,6 +23,7 @@ const Scheduler = scheduler.Scheduler;
 const CommandsMap = commands.CommandsMap;
 const Renderer = @import("../view/renderer.zig").Renderer;
 const JobManager = job.JobManager;
+const ServerManager = job.ServerManager;
 
 pub const CoreError = error{
     NoFileName,
@@ -131,6 +132,7 @@ pub const Editor = struct {
     /// hooks registry
     hooks: std.StringHashMap(std.ArrayList(c_int)),
     job_manager: JobManager,
+    server_manager: ServerManager,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -153,6 +155,7 @@ pub const Editor = struct {
             .pum = PumManager.init(allocator),
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
             .job_manager = JobManager.init(allocator),
+            .server_manager = ServerManager.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -213,6 +216,7 @@ pub const Editor = struct {
         self.toast_manager.deinit();
         self.pum.deinit();
         self.job_manager.deinit();
+        self.server_manager.deinit();
         if (self.clipboard) |cl| self.allocator.free(cl);
     }
 
@@ -291,6 +295,7 @@ pub const Editor = struct {
                 }
 
                 self.mode = m;
+                _ = self.triggerHook("ModeChanged");
                 self.needs_redraw = true;
             },
             .Quit => self.quit(),
@@ -710,7 +715,9 @@ pub const Editor = struct {
                         api.c.lua_pop(L, 1);
                     }
 
-                    api.c.luaL_unref(L, api.c.LUA_REGISTRYINDEX, result.ref_id);
+                    if (!result.is_server_msg) {
+                        api.c.luaL_unref(L, api.c.LUA_REGISTRYINDEX, result.ref_id);
+                    }
                 }
                 if (result.output) |out| self.allocator.free(out);
                 self.needs_redraw = true;
