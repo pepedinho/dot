@@ -1,15 +1,68 @@
+---@meta
+-- Definition file for the Pepe Dot Lua API.
+-- Do not execute this file. It is solely used for LSP autocompletion.
+
+---@class DotApi
 dot = {}
 
+---Displays a temporary notification (Toast) in the bottom right corner of the screen.
+---@param message string The notification text to display.
 function dot.print(message) end
 
+---Inserts text at the current logical cursor position.
+---Multiple consecutive insertions are grouped in the history for Undo functionality.
+---@param text string The text to insert.
 function dot.insert(text) end
 
+---Moves the logical cursor one character to the right.
 function dot.move_right() end
 
+---Retrieves the current logical cursor position.
+---@return integer[] # A table containing {row, column} (1-indexed).
 function dot.get_cursor() end
 
+---Give the actual terminal win size
+---@return integer[] # A table containing {row, column} (1-indexed).
+function dot.get_win_size() end
+
+---Retrieves an array containing the requested lines of text from the active buffer.
+---@param start_row integer Starting row (inclusive, 1-indexed).
+---@param end_row integer Ending row (inclusive).
+---@return string[] # An array of strings representing the lines.
 function dot.get_lines(start_row, end_row) end
 
-function dot.set_lines(start_row, end_row, text) end
+---Replaces a block of lines in the current buffer.
+---To insert lines without deleting any, `start_row` and `end_row` must be identical.
+---@param start_row integer Starting row of the deletion block.
+---@param end_row integer Ending row of the deletion block.
+---@param lines string[] An array of strings containing the new lines to insert.
+function dot.set_lines(start_row, end_row, lines) end
 
-function dot.hook_on(event_name, fn) end
+---Registers a callback function for a specific editor event.
+---If the callback returns `true`, the editor's default behavior is prevented (Prevent Default).
+---@param event_name string The name of the event (e.g., "BufWritePre", "CmdTab", "CmdEnter").
+---@param callback fun():boolean? The function to execute when the event is triggered.
+function dot.hook_on(event_name, callback) end
+
+---Retrieves the current text content of the command line (prompt).
+---@return string # The text typed by the user.
+function dot.get_cmdline() end
+
+---Replaces the text content of the command line.
+---@param text string The new command line text.
+function dot.set_cmdline(text) end
+
+---Opens a directory and lists the files and folders it contains.
+---@param path string The directory path (use an empty string "" for the current working directory).
+---@return string[] # An array containing the names of files and directories.
+function dot.read_dir(path) end
+
+---Displays the Popup Menu (PUM) on the screen for autocomplétion or selection.
+---@param x integer The X position (column) where the menu should be drawn.
+---@param y integer The Y position (row) where the menu should be drawn (the menu expands upwards).
+---@param items string[] The array of choices to display.
+---@param selected_index integer The index of the highlighted item (Note: 0-indexed to match the Zig backend).
+function dot.show_pum(x, y, items, selected_index) end
+
+---Hides and clears the active Popup Menu (PUM).
+function dot.hide_pum() end

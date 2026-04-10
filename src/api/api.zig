@@ -38,6 +38,24 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     c.lua_pushcfunction(L, api_hook_on);
     c.lua_setfield(L, -2, "hook_on");
 
+    c.lua_pushcfunction(L, api_show_pum);
+    c.lua_setfield(L, -2, "show_pum");
+
+    c.lua_pushcfunction(L, api_hide_pum);
+    c.lua_setfield(L, -2, "hide_pum");
+
+    c.lua_pushcfunction(L, api_read_dir);
+    c.lua_setfield(L, -2, "read_dir");
+
+    c.lua_pushcfunction(L, api_get_cmdline);
+    c.lua_setfield(L, -2, "get_cmdline");
+
+    c.lua_pushcfunction(L, api_set_cmdline);
+    c.lua_setfield(L, -2, "set_cmdline");
+
+    c.lua_pushcfunction(L, api_get_win_size);
+    c.lua_setfield(L, -2, "get_win_size");
+
     c.lua_setglobal(L, "dot");
     return L;
 }
@@ -243,4 +261,115 @@ export fn api_hook_on(L: ?*c.lua_State) c_int {
 
     list_ptr.?.append(editor.allocator, ref_id) catch {};
     return 0;
+}
+
+export fn api_show_pum(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const x = @as(u16, @intCast(c.luaL_checkinteger(L, 1)));
+    const y = @as(u16, @intCast(c.luaL_checkinteger(L, 2)));
+    const selected_idx = @as(usize, @intCast(c.luaL_checkinteger(L, 4)));
+
+    c.luaL_checktype(L, 3, c.LUA_TTABLE);
+
+    editor.pum.clear();
+
+    const table_len = c.luaL_len(L, 3);
+    var i: c_int = 1;
+
+    while (i <= table_len) : (i += 1) {
+        _ = c.lua_rawgeti(L, 3, i);
+        if (c.lua_isstring(L, -1) != 0) {
+            var str_len: usize = 0;
+            const item_str = c.lua_tolstring(L, -1, &str_len);
+
+            const copy = editor.allocator.dupe(u8, item_str[0..str_len]) catch continue;
+            editor.pum.items.append(editor.allocator, copy) catch {};
+        }
+        c.lua_pop(L, 1);
+    }
+
+    editor.pum.x = x;
+    editor.pum.y = y;
+    editor.pum.selected_idx = selected_idx;
+    editor.pum.active = true;
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_hide_pum(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    _ = L;
+    editor.pum.clear();
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_get_cmdline(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    _ = c.lua_pushlstring(L, editor.cmd_buf.items.ptr, editor.cmd_buf.items.len);
+    return 1;
+}
+
+export fn api_set_cmdline(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const str_ptr = c.luaL_checklstring(L, 1, null);
+    const text = std.mem.span(str_ptr);
+
+    editor.cmd_buf.clearRetainingCapacity();
+    editor.cmd_buf.appendSlice(editor.allocator, text) catch {};
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_read_dir(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const path_ptr = c.luaL_checklstring(L, 1, null);
+    const path = std.mem.span(path_ptr);
+    const target = if (path.len == 0) "." else path;
+
+    c.lua_newtable(L);
+
+    var dir = std.fs.cwd().openDir(target, .{ .iterate = true }) catch {
+        return 1;
+    };
+    defer dir.close();
+
+    var it = dir.iterate();
+    var index: c_int = 1;
+
+    while (it.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            const dir_name = std.fmt.allocPrint(editor.allocator, "{s}/", .{entry.name}) catch continue;
+            defer editor.allocator.free(dir_name);
+            _ = c.lua_pushlstring(L, dir_name.ptr, dir_name.len);
+        } else {
+            _ = c.lua_pushlstring(L, entry.name.ptr, entry.name.len);
+        }
+        c.lua_rawseti(L, -2, index);
+        index += 1;
+    }
+    return 1;
+}
+
+export fn api_get_win_size(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const win_cols = editor.win.cols;
+    const win_rows = editor.win.rows;
+
+    c.lua_newtable(L);
+
+    c.lua_pushinteger(L, @intCast(win_rows));
+    c.lua_rawseti(L, -2, 1);
+
+    c.lua_pushinteger(L, @intCast(win_cols));
+    c.lua_rawseti(L, -2, 2);
+
+    return 1;
 }
