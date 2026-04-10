@@ -278,7 +278,7 @@ pub const Editor = struct {
                 }
                 if (self.mode == .Insert) {
                     self.cmd_buf.clearRetainingCapacity();
-                    view.buf.highlight.clearRetainingCapacity();
+                    view.buf.extmarks.clearRetainingCapacity();
                 }
 
                 if (self.mode == .Insert and m != .Insert) {

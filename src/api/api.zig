@@ -1,5 +1,6 @@
 const std = @import("std");
 const core = @import("../core/core.zig");
+const style = @import("../view/style.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -55,6 +56,12 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
 
     c.lua_pushcfunction(L, api_get_win_size);
     c.lua_setfield(L, -2, "get_win_size");
+
+    c.lua_pushcfunction(L, api_add_style);
+    c.lua_setfield(L, -2, "add_style");
+
+    c.lua_pushcfunction(L, api_clear_style);
+    c.lua_setfield(L, -2, "clear_style");
 
     c.lua_setglobal(L, "dot");
     return L;
@@ -372,4 +379,55 @@ export fn api_get_win_size(L: ?*c.lua_State) c_int {
     c.lua_rawseti(L, -2, 2);
 
     return 1;
+}
+
+export fn api_add_style(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
+    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+
+    c.luaL_checktype(L, 4, c.LUA_TTABLE);
+
+    var hl_style = style.Style{};
+
+    _ = c.lua_getfield(L, 4, "fg");
+    if (c.lua_isinteger(L, -1) != 0) hl_style.fg = @enumFromInt(c.lua_tointegerx(L, -1, null));
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, 4, "bg");
+    if (c.lua_isinteger(L, -1) != 0) hl_style.bg = @enumFromInt(c.lua_tointegerx(L, -1, null));
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, 4, "bold");
+    if (c.lua_isboolean(L, -1) != false) hl_style.bold = (c.lua_toboolean(L, -1) != 0);
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, 4, "italic");
+    if (c.lua_isboolean(L, -1) != false) hl_style.italic = (c.lua_toboolean(L, -1) != 0);
+    c.lua_pop(L, 1);
+
+    const start_idx = view.buf.getLogicalFromRowCol(row, col);
+    const end_idx = start_idx + length;
+
+    view.buf.extmarks.append(editor.allocator, .{
+        .logical_start = start_idx,
+        .logical_end = end_idx,
+        .style = hl_style,
+    }) catch {};
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_clear_style(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    _ = L;
+    editor.getActiveView().buf.extmarks.clearRetainingCapacity();
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
 }

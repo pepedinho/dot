@@ -1,12 +1,14 @@
 const std = @import("std");
 const utils = @import("../utils.zig");
+const style = @import("../view/style.zig");
 const HistoryManager = @import("history.zig").HistoryManager;
 
 const TAB_SIZE: usize = 4;
 
-pub const Mark = struct {
-    start: usize, // physical index
-    end: usize,
+pub const ExMark = struct {
+    logical_start: usize,
+    logical_end: usize,
+    style: style.Style,
 };
 
 /// Gap buffer implementation
@@ -23,7 +25,7 @@ pub const GapBuffer = struct {
     /// associated filename
     filename: ?[]const u8,
     /// This field is used by R-engine to colorize text frames
-    highlight: std.ArrayList(Mark),
+    extmarks: std.ArrayList(ExMark),
 
     history: HistoryManager,
 
@@ -40,19 +42,19 @@ pub const GapBuffer = struct {
             .gap_start = 0,
             .gap_end = buf.len,
             .filename = null,
-            .highlight = .empty,
+            .extmarks = .empty,
             .history = HistoryManager.init(allocator),
         };
     }
 
     pub fn find(self: *GapBuffer, query: []const u8) !void {
-        self.highlight.clearRetainingCapacity();
+        self.extmarks.clearRetainingCapacity();
         if (query.len == 0) return;
 
         var i: usize = 0;
         const part1 = self.getFirst();
         while (std.mem.indexOfPos(u8, part1, i, query)) |pos| {
-            try self.highlight.append(self.allocator, .{ .start = pos, .end = pos + query.len });
+            try self.extmarks.append(self.allocator, .{ .logical_start = pos, .logical_end = pos + query.len, .style = .{ .bg = .Magenta } });
             i = pos + query.len;
         }
 
@@ -60,7 +62,7 @@ pub const GapBuffer = struct {
         const part2 = self.getSecond();
         while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
             const logical_pos = self.gap_start + pos;
-            try self.highlight.append(self.allocator, .{ .start = logical_pos, .end = logical_pos + query.len });
+            try self.extmarks.append(self.allocator, .{ .logical_start = logical_pos, .logical_end = logical_pos + query.len, .style = .{ .bg = .Magenta } });
             i = pos + query.len;
         }
     }
@@ -86,7 +88,7 @@ pub const GapBuffer = struct {
             .gap_start = text.len,
             .gap_end = total_capacity,
             .filename = name,
-            .highlight = .empty,
+            .extmarks = .empty,
             .history = HistoryManager.init(allocator),
         };
     }
@@ -112,7 +114,7 @@ pub const GapBuffer = struct {
         if (self.filename) |f| {
             self.allocator.free(f);
         }
-        self.highlight.deinit(self.allocator);
+        self.extmarks.deinit(self.allocator);
         self.history.deinit();
         self.allocator.free(self.buffer);
     }
@@ -304,12 +306,12 @@ pub const GapBuffer = struct {
     }
 
     pub fn jumpToNextSearchResult(self: *GapBuffer) void {
-        if (self.highlight.items.len == 0) return;
+        if (self.extmarks.items.len == 0) return;
 
-        var target = self.highlight.items[0].start;
-        for (self.highlight.items) |mark| {
-            if (mark.start > self.gap_start) {
-                target = mark.start;
+        var target = self.extmarks.items[0].logical_start;
+        for (self.extmarks.items) |mark| {
+            if (mark.logical_start > self.gap_start) {
+                target = mark.logical_start;
                 break;
             }
         }
@@ -317,16 +319,16 @@ pub const GapBuffer = struct {
     }
 
     pub fn jumpToPrevSearchResult(self: *GapBuffer) void {
-        if (self.highlight.items.len == 0) return;
+        if (self.extmarks.items.len == 0) return;
 
-        var target = self.highlight.items[self.highlight.items.len - 1].start;
+        var target = self.extmarks.items[self.extmarks.items.len - 1].logical_start;
 
-        var i: usize = self.highlight.items.len;
+        var i: usize = self.extmarks.items.len;
         while (i > 0) {
             i -= 1;
-            const mark = self.highlight.items[i];
-            if (mark.start < self.gap_start) {
-                target = mark.start;
+            const mark = self.extmarks.items[i];
+            if (mark.logical_start < self.gap_start) {
+                target = mark.logical_start;
                 break;
             }
         }
@@ -389,5 +391,26 @@ pub const GapBuffer = struct {
         }
 
         return .{ .start = start, .end = end };
+    }
+
+    pub fn getLogicalFromRowCol(self: *const GapBuffer, target_row: usize, target_col: usize) usize {
+        var current_row: usize = 1;
+        var current_col: usize = 1;
+        const total_len = self.len();
+
+        for (0..total_len) |i| {
+            if (current_row == target_row and current_col >= target_col) return i;
+
+            const c = self.charAt(i).?;
+            if (c == '\n') {
+                current_row += 1;
+                current_col = 1;
+            } else if (c == '\t') {
+                current_col += TAB_SIZE;
+            } else {
+                current_col += 1;
+            }
+        }
+        return total_len;
     }
 };

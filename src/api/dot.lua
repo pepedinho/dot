@@ -66,3 +66,13 @@ function dot.show_pum(x, y, items, selected_index) end
 
 ---Hides and clears the active Popup Menu (PUM).
 function dot.hide_pum() end
+
+---Applies a visual style to a portion of text.
+---@param row integer The line (1-indexed)
+---@param col integer The starting column (1-indexed)
+---@param length integer The number of characters to color
+---@param style {fg?: integer, bg?: integer, bold?: boolean, italic?: boolean} Style definition
+function dot.add_highlight(row, col, length, style) end
+
+---Cleans all stains from the active buffer.
+function dot.clear_highlights() end
