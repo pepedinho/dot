@@ -14,6 +14,7 @@ const commands = @import("commands.zig");
 const api = @import("../api/api.zig");
 
 const c = api.c;
+const PumManager = @import("../view/pum.zig").PumManager;
 const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
 const ActionQueue = actions.ActionQueue;
@@ -108,6 +109,7 @@ pub const Editor = struct {
     /// Render engine used to render text to screen
     renderer: Renderer,
     clipboard: ?[]u8,
+    pum: PumManager,
     // ========================
     // Debug Part
     // ========================
@@ -145,6 +147,7 @@ pub const Editor = struct {
             .renderer = Renderer.init(allocator),
             .clipboard = null,
             .toast_manager = ToastManager.init(allocator),
+            .pum = PumManager.init(allocator),
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
         };
 
@@ -204,6 +207,7 @@ pub const Editor = struct {
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
         self.toast_manager.deinit();
+        self.pum.deinit();
         if (self.clipboard) |cl| self.allocator.free(cl);
     }
 
@@ -717,12 +721,24 @@ pub const Editor = struct {
                     },
                     .Command, .Search => {
                         switch (key) {
-                            .escape => try self.pushAction(.{ .SetMode = .Normal }),
-                            .ascii => |ch| {
-                                try self.pushAction(.{ .CommandChar = ch });
+                            .escape => {
+                                if (!self.triggerHook("CmdEsc")) {
+                                    try self.pushAction(.{ .SetMode = .Normal });
+                                }
                             },
-                            .backspace => try self.pushAction(.CommandBackspace),
-                            .enter => try self.pushAction(.ExecuteCommand),
+                            .ascii => |ch| {
+                                if (ch == '\t') {
+                                    _ = self.triggerHook("CmdTab");
+                                } else try self.pushAction(.{ .CommandChar = ch });
+                            },
+                            .backspace => {
+                                _ = self.triggerHook("CmdBackSpace");
+                                try self.pushAction(.CommandBackspace);
+                            },
+                            .enter => {
+                                if (!self.triggerHook("CmdEnter"))
+                                    try self.pushAction(.ExecuteCommand);
+                            },
                             else => {},
                         }
                     },
