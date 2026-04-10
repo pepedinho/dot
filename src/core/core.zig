@@ -119,7 +119,13 @@ pub const Editor = struct {
     last_fps: usize = 0,
     last_fps_time: i64 = 0,
     cmd_map: CommandsMap,
+    // =======================
+    // LUA VM
+    // =======================
+    /// Lua vm instance
     vm: ?*c.lua_State = null,
+    /// hooks registry
+    hooks: std.StringHashMap(std.ArrayList(c_int)),
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -139,6 +145,7 @@ pub const Editor = struct {
             .renderer = Renderer.init(allocator),
             .clipboard = null,
             .toast_manager = ToastManager.init(allocator),
+            .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -174,6 +181,12 @@ pub const Editor = struct {
 
     pub fn deinit(self: *Editor) void {
         if (self.vm) |L| c.lua_close(L);
+        var it_hook = self.hooks.iterator();
+        while (it_hook.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.hooks.deinit();
         var it = self.pop_store.valueIterator();
         while (it.next()) |v| {
             v.deinit();
@@ -521,6 +534,8 @@ pub const Editor = struct {
     /// Save current buffer as associated buffer filename
     /// if `buffers[current].filename` is null display an error popup
     pub fn saveFile(self: *Editor) !void {
+        if (self.triggerHook("BufWritePre")) return;
+
         const current_buf_idx = self.getCurrentBufferIdx();
         const buf = self.buffers.items[current_buf_idx];
         const name = buf.filename orelse {
@@ -786,5 +801,29 @@ pub const Editor = struct {
         }
         v.is_dirty = true;
         self.is_dirty = true;
+    }
+
+    pub fn triggerHook(self: *Editor, hook_name: []const u8) bool {
+        const L = self.vm orelse return false;
+        var prevent_default = false;
+
+        if (self.hooks.get(hook_name)) |callback| {
+            for (callback.items) |ref_id| {
+                _ = api.c.lua_rawgeti(L, api.c.LUA_REGISTRYINDEX, ref_id);
+                if (api.c.lua_pcallk(L, 0, 1, 0, 0, null) != 0) {
+                    const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                    self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
+                    api.c.lua_pop(L, 1);
+                } else {
+                    if (api.c.lua_isboolean(L, -1) != false) {
+                        if (api.c.lua_toboolean(L, -1) != 0) {
+                            prevent_default = true;
+                        }
+                    }
+                    api.c.lua_pop(L, 1);
+                }
+            }
+        }
+        return prevent_default;
     }
 };

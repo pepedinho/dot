@@ -35,6 +35,9 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     c.lua_pushcfunction(L, api_set_lines);
     c.lua_setfield(L, -2, "set_lines");
 
+    c.lua_pushcfunction(L, api_hook_on);
+    c.lua_setfield(L, -2, "hook_on");
+
     c.lua_setglobal(L, "dot");
     return L;
 }
@@ -215,5 +218,29 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
     editor.needs_redraw = true;
     editor.is_dirty = true;
 
+    return 0;
+}
+
+export fn api_hook_on(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const hook_ptr = c.luaL_checklstring(L, 1, null);
+    c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
+
+    const hook_name = std.mem.span(hook_ptr);
+
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+
+    var list_ptr = editor.hooks.getPtr(hook_name);
+
+    if (list_ptr == null) {
+        const key = editor.allocator.dupe(u8, hook_name) catch return 0;
+        const new_list: std.ArrayList(c_int) = .empty;
+
+        editor.hooks.put(key, new_list) catch return 0;
+        list_ptr = editor.hooks.getPtr(key);
+    }
+
+    list_ptr.?.append(editor.allocator, ref_id) catch {};
     return 0;
 }
