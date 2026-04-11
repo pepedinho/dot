@@ -1,4 +1,14 @@
 const std = @import("std");
+const style = @import("style.zig");
+
+pub const Black = style.Color{ .Index = 0 };
+pub const Red = style.Color{ .Index = 1 };
+pub const Green = style.Color{ .Index = 2 };
+pub const Yellow = style.Color{ .Index = 3 };
+pub const Blue = style.Color{ .Index = 4 };
+pub const Magenta = style.Color{ .Index = 5 };
+pub const Cyan = style.Color{ .Index = 6 };
+pub const White = style.Color{ .Index = 7 };
 
 pub const Color = struct {
     r: u8,

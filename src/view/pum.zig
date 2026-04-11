@@ -66,9 +66,9 @@ pub const PumManager = struct {
 
             const is_selected = (i == self.selected_idx);
             const theme = if (is_selected)
-                style.Style{ .fg = .Black, .bg = .White, .bold = true }
+                style.Style{ .fg = ansi.Black, .bg = ansi.White, .bold = true }
             else
-                style.Style{ .fg = .White, .bg = .Black };
+                style.Style{ .fg = ansi.White, .bg = ansi.Black };
 
             const use_color = item.icon_color != null and !is_selected;
 

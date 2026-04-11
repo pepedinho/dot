@@ -2,6 +2,8 @@ local json = require("examples.json")
 local zls_id = nil
 local stdout_buffer = ""
 local file_version = 1
+local error_fg = "#F14C4C"
+local error_bg = "#421B1B"
 
 local function make_request(id, method, params_json_str)
 	local payload = string.format('{"jsonrpc":"2.0","id":%d,"method":"%s","params":%s}', id, method, params_json_str)
@@ -93,8 +95,8 @@ local function handle_lsp_message(data)
 					length = 1
 				end
 
-				dot.add_style(row, col, length, { fg = 31, underline = true })
-				dot.add_ghost(row, col, diag.message, "└── ", { fg = 31, italic = true })
+				dot.add_style(row, col, length, { fg = error_fg, underline = true })
+				dot.add_ghost(row, col, diag.message, "└── ", { fg = error_fg, bg = error_bg, italic = true })
 			end
 		else
 			dot.print("✅ No error !")

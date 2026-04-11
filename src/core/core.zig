@@ -13,6 +13,7 @@ const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
 const api = @import("../api/api.zig");
 const job = @import("worker.zig");
+const ansi = @import("../view/ansi.zig");
 
 const c = api.c;
 const PumManager = @import("../view/pum.zig").PumManager;
@@ -361,7 +362,7 @@ pub const Editor = struct {
                 const bounds = view.buf.getLineBounds(view.buf.gap_start);
                 if (self.clipboard) |old_clip| self.allocator.free(old_clip);
                 self.clipboard = try view.buf.getLogicalRange(self.allocator, bounds.start, bounds.end);
-                try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = .Cyan, .bg = .Black, .bold = true });
+                try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = ansi.Cyan, .bg = ansi.Black, .bold = true });
                 self.needs_redraw = true;
             },
             .Paste => {
@@ -371,10 +372,10 @@ pub const Editor = struct {
                         try view.buf.insertChar(cl);
                     }
                     try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
-                    try self.toast_manager.push("Pasted", 1500, .{ .fg = .Green, .bg = .Black, .bold = true });
+                    try self.toast_manager.push("Pasted", 1500, .{ .fg = ansi.Green, .bg = ansi.Black, .bold = true });
                     self.needs_redraw = true;
                 } else {
-                    try self.toast_manager.push("Clipboard is empty!", 2000, .{ .fg = .White, .bg = .Red, .bold = true });
+                    try self.toast_manager.push("Clipboard is empty!", 2000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true });
                     self.needs_redraw = true;
                 }
             },
@@ -715,7 +716,7 @@ pub const Editor = struct {
 
                     if (api.c.lua_pcallk(L, 2, 0, 0, 0, null) != 0) {
                         const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                        self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
+                        self.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
                         api.c.lua_pop(L, 1);
                     }
 
@@ -867,7 +868,7 @@ pub const Editor = struct {
                 _ = api.c.lua_rawgeti(L, api.c.LUA_REGISTRYINDEX, ref_id);
                 if (api.c.lua_pcallk(L, 0, 1, 0, 0, null) != 0) {
                     const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                    self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
+                    self.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
                     api.c.lua_pop(L, 1);
                 } else {
                     if (api.c.lua_isboolean(L, -1) != false) {
