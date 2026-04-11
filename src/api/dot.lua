@@ -10,6 +10,15 @@ dot = {}
 ---@field icon? string (Optional) A graphical unicode icon (e.g., Nerd Font).
 ---@field icon_color? string (Optional) ANSI color code for icon.
 
+---@alias DotColor integer|string
+
+---@class DotStyle
+---@field fg? DotColor Foreground color
+---@field bg? DotColor Background color
+---@field bold? boolean
+---@field italic? boolean
+---@field underline? boolean
+
 ---Displays a temporary notification (Toast) in the bottom right corner of the screen.
 ---@param message string The notification text to display.
 function dot.print(message) end
@@ -76,7 +85,7 @@ function dot.hide_pum() end
 ---@param row integer The line (1-indexed)
 ---@param col integer The starting column (1-indexed)
 ---@param length integer The number of characters to color
----@param style {fg?: integer, bg?: integer, bold?: boolean, italic?: boolean} Style definition
+---@param style DotStyle Style definition
 function dot.add_style(row, col, length, style) end
 
 ---Cleans all stains from the active buffer.
@@ -113,7 +122,7 @@ function dot.get_file() end
 ---@param col integer The column offset for indentation (1-indexed).
 ---@param text string The main text to display (e.g., the error message).
 ---@param prefix string? An optional prefix string (e.g., "└── ").
----@param style {fg?: integer, bg?: integer, bold?: boolean, italic?: boolean} The formatting style.
+---@param style DotStyle The formatting style.
 function dot.add_ghost(row, col, text, prefix, style) end
 
 ---Clears all currently active Ghost Lines from the editor view.

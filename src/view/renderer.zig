@@ -208,14 +208,14 @@ pub const Renderer = struct {
         var status_line = style.Line.init(arena);
 
         const mode_bg = switch (editor.mode) {
-            .Normal => style.Color.Cyan,
-            .Insert => style.Color.Green,
-            .Command => style.Color.Red,
-            .Search => style.Color.Yellow,
+            .Normal => ansi.Cyan,
+            .Insert => ansi.Green,
+            .Command => ansi.Red,
+            .Search => ansi.Yellow,
         };
 
         const mode_idx = @intFromEnum(editor.mode);
-        try status_line.addSpan(style.Span.init(MODE[mode_idx], .{ .bg = mode_bg, .fg = .Black, .bold = true }));
+        try status_line.addSpan(style.Span.init(MODE[mode_idx], .{ .bg = mode_bg, .fg = ansi.Black, .bold = true }));
         try status_line.addText(" | ");
 
         const mode_str_len = MODE[mode_idx].len;
@@ -238,7 +238,7 @@ pub const Renderer = struct {
                 .span = f_span,
             });
         } else {
-            try status_line.addSpan(style.Span.init("[No Name]", .{ .italic = true, .fg = .White }));
+            try status_line.addSpan(style.Span.init("[No Name]", .{ .italic = true, .fg = ansi.White }));
         }
 
         // Fill the rest of the status line with a background color
@@ -260,14 +260,14 @@ pub const Renderer = struct {
         const prompt_char = if (editor.mode == .Search) "/" else ":";
         var cmd_line = style.Line.init(arena);
 
-        try cmd_line.addSpan(style.Span.init(prompt_char, .{ .bg = .Black, .fg = .Yellow, .bold = true }));
-        try cmd_line.addSpan(style.Span.init(text, .{ .bg = .Black, .fg = .White }));
+        try cmd_line.addSpan(style.Span.init(prompt_char, .{ .bg = ansi.Black, .fg = ansi.Yellow, .bold = true }));
+        try cmd_line.addSpan(style.Span.init(text, .{ .bg = ansi.Black, .fg = ansi.White }));
 
         const used_cols = offset + text.len + 1;
         if (cols > used_cols) {
             const padding = try arena.alloc(u8, cols - used_cols);
             @memset(padding, ' ');
-            try cmd_line.addSpan(style.Span.init(padding, .{ .bg = .Black }));
+            try cmd_line.addSpan(style.Span.init(padding, .{ .bg = ansi.Black }));
         }
 
         try cmd_line.render(stdout, 0.0);

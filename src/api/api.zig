@@ -2,6 +2,7 @@ const std = @import("std");
 const core = @import("../core/core.zig");
 const style = @import("../view/style.zig");
 const job = @import("../core/worker.zig");
+const ansi = @import("../view/ansi.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -10,6 +11,26 @@ pub const c = @cImport({
 });
 
 var global_editor: ?*core.Editor = null;
+
+fn parseLuaColor(L: ?*c.lua_State, field_name: [:0]const u8) style.Color {
+    _ = c.lua_getfield(L, -1, field_name.ptr);
+    defer c.lua_pop(L, 1);
+
+    if (c.lua_type(L, -1) == c.LUA_TNUMBER) {
+        return .{ .Index = @as(u8, @intCast(c.lua_tointegerx(L, -1, null))) };
+    } else if (c.lua_type(L, -1) == c.LUA_TSTRING) {
+        const hex_ptr = c.lua_tolstring(L, -1, null);
+        const hex = std.mem.span(hex_ptr);
+
+        if (hex.len == 7 and hex[0] == '#') {
+            const r = std.fmt.parseInt(u8, hex[1..3], 16) catch return .Default;
+            const g = std.fmt.parseInt(u8, hex[3..5], 16) catch return .Default;
+            const b = std.fmt.parseInt(u8, hex[5..7], 16) catch return .Default;
+            return .{ .Rgb = .{ .r = r, .g = g, .b = b } };
+        }
+    }
+    return .Default;
+}
 
 fn registerFn(L: ?*c.lua_State, name: [:0]const u8, func: c.lua_CFunction) void {
     c.lua_pushcfunction(L, func);
@@ -93,7 +114,7 @@ export fn api_print(L: ?*c.lua_State) c_int {
     const str_ptr = c.luaL_checklstring(L, 1, null);
     const message = std.mem.span(str_ptr);
 
-    editor.toast_manager.push(message, 3000, .{ .fg = .Yellow, .bg = .Black, .bold = true }) catch {};
+    editor.toast_manager.push(message, 3000, .{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true }) catch {};
     editor.needs_redraw = true;
     return 0;
 }
@@ -430,10 +451,26 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
 
     var hl_style = style.Style{};
 
-    if (getIntField(L, 4, "fg")) |fg_val| hl_style.fg = @enumFromInt(fg_val);
-    if (getIntField(L, 4, "bg")) |bg_val| hl_style.bg = @enumFromInt(bg_val);
-    if (getBoolField(L, 4, "bold")) |bold_val| hl_style.bold = bold_val;
-    if (getBoolField(L, 4, "italic")) |italic_val| hl_style.italic = italic_val;
+    if (c.lua_istable(L, 4)) {
+        c.lua_pushvalue(L, 4);
+
+        hl_style.fg = parseLuaColor(L, "fg");
+        hl_style.bg = parseLuaColor(L, "bg");
+
+        _ = c.lua_getfield(L, -1, "italic");
+        hl_style.italic = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "bold");
+        hl_style.bold = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "underline");
+        hl_style.underline = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        c.lua_pop(L, 1);
+    }
 
     const start_idx = view.buf.getLogicalFromRowCol(row, col);
     const end_idx = start_idx + length;
@@ -587,16 +624,23 @@ export fn api_add_ghost(L: ?*c.lua_State) c_int {
 
     var theme = style.Style{};
     if (c.lua_istable(L, 5)) {
-        _ = c.lua_getfield(L, 5, "fg");
-        if (c.lua_isnumber(L, -1) != 0) {
-            theme.fg = @enumFromInt(c.lua_tointegerx(L, -1, null));
-        }
+        c.lua_pushvalue(L, 5);
+
+        theme.fg = parseLuaColor(L, "fg");
+        theme.bg = parseLuaColor(L, "bg");
+
+        _ = c.lua_getfield(L, -1, "italic");
+        theme.italic = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
-        _ = c.lua_getfield(L, 5, "italic");
-        if (c.lua_isboolean(L, -1)) {
-            theme.italic = c.lua_toboolean(L, -1) != 0;
-        }
+        _ = c.lua_getfield(L, -1, "bold");
+        theme.bold = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "underline");
+        theme.underline = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
         c.lua_pop(L, 1);
     }
     if (prefix_copy) |p| {
