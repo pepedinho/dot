@@ -24,6 +24,7 @@ const CommandsMap = commands.CommandsMap;
 const Renderer = @import("../view/renderer.zig").Renderer;
 const JobManager = job.JobManager;
 const ServerManager = job.ServerManager;
+const GhostManager = @import("../view/ghost.zig").GhostManager;
 
 pub const CoreError = error{
     NoFileName,
@@ -101,6 +102,7 @@ pub const Editor = struct {
     /// With different lifetime and attributs
     pop_store: std.AutoHashMap(u32, pop.Pop),
     toast_manager: ToastManager,
+    ghost_manager: GhostManager,
     /// Used to increment id for assign
     next_popup_id: u32 = 1,
     /// Store keybinds and theirs associated Action
@@ -152,6 +154,7 @@ pub const Editor = struct {
             .renderer = Renderer.init(allocator),
             .clipboard = null,
             .toast_manager = ToastManager.init(allocator),
+            .ghost_manager = GhostManager.init(allocator),
             .pum = PumManager.init(allocator),
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
             .job_manager = JobManager.init(allocator),
@@ -214,6 +217,7 @@ pub const Editor = struct {
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
         self.toast_manager.deinit();
+        self.ghost_manager.deinit();
         self.pum.deinit();
         self.job_manager.deinit();
         self.server_manager.deinit();

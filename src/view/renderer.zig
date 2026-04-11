@@ -59,7 +59,7 @@ pub const Renderer = struct {
         const frame_alloc = arena.allocator();
 
         for (editor.views.items) |*view| {
-            try self.renderView(stdout, view); // TODO: Later, pass frame_alloc for syntax highlighting
+            try self.renderView(stdout, editor, view); // TODO: Later, pass frame_alloc for syntax highlighting
         }
 
         try self.traceBorder(stdout, editor);
@@ -84,7 +84,7 @@ pub const Renderer = struct {
 
         for (editor.views.items) |*view| {
             if (view.is_dirty) {
-                try self.renderView(stdout, view);
+                try self.renderView(stdout, editor, view);
             }
         }
 
@@ -110,13 +110,18 @@ pub const Renderer = struct {
         const view = editor.getActiveView();
         const buf = view.buf;
         const pos = buf.getCursorPos();
+        var layout_shift: usize = 0;
+        for (editor.ghost_manager.ghosts.items) |g| {
+            if (g.buffer_row < pos.y - 1) {
+                layout_shift += 1;
+            }
+        }
 
-        const screen_y = view.y + pos.y - view.row_offset - 1;
+        const screen_y = view.y + pos.y - view.row_offset - 1 + layout_shift;
         const screen_x = view.x + pos.x - view.col_offset - 1;
 
         try stdout.writeAll(ansi.hide_cursor);
         try ansi.goto(stdout, screen_y, view.x);
-
         var start_of_line = buf.gap_start;
         while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
             start_of_line -= 1;
@@ -279,13 +284,19 @@ pub const Renderer = struct {
         } else {
             const view = editor.getActiveView();
             const pos = view.buf.getCursorPos();
-            const screen_y = view.y + pos.y - view.row_offset - 1;
+            var layout_shift: usize = 0;
+            for (editor.ghost_manager.ghosts.items) |g| {
+                if (g.buffer_row < pos.y - 1) {
+                    layout_shift += 1;
+                }
+            }
+            const screen_y = view.y + pos.y - view.row_offset - 1 + layout_shift;
             const screen_x = view.x + pos.x - view.col_offset - 1;
             try ansi.goto(stdout, screen_y, screen_x);
         }
     }
 
-    fn renderView(self: *Renderer, stdout: anytype, view: *View) !void {
+    fn renderView(self: *Renderer, stdout: anytype, editor: *Editor, view: *View) !void {
         _ = self;
         const part1 = view.buf.getFirst();
         const part2 = view.buf.getSecond();
@@ -319,6 +330,11 @@ pub const Renderer = struct {
                     if (current_row > view.row_offset) {
                         try stdout.writeAll(clear_to_eol);
                         screen_row += 1;
+
+                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(stdout, current_row - 1, @as(u16, @intCast(view.x)), @as(u16, @intCast(screen_row)), @as(u16, @intCast(max_rows)));
+
+                        screen_row += ghosts_drawn;
+
                         if (screen_row <= max_rows) {
                             try ansi.goto(stdout, screen_row, view.x);
                         }
