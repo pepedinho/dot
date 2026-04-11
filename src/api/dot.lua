@@ -77,7 +77,32 @@ function dot.hide_pum() end
 ---@param col integer The starting column (1-indexed)
 ---@param length integer The number of characters to color
 ---@param style {fg?: integer, bg?: integer, bold?: boolean, italic?: boolean} Style definition
-function dot.add_highlight(row, col, length, style) end
+function dot.add_style(row, col, length, style) end
 
 ---Cleans all stains from the active buffer.
-function dot.clear_highlights() end
+function dot.clear_style() end
+
+---Executes a system command in the background without blocking the editor.
+---@param cmd string The command to execute (e.g., "grep -r TODO .")
+---@param callback fun(success: boolean, output: string?) The function called at the end.
+function dot.spawn(cmd, callback) end
+
+---Starts a persistent background process (e.g., an LSP server) and listens to its standard output.
+---The process runs continuously until killed or until the editor closes.
+---@param cmd string The system command to execute (e.g., "zls").
+---@param on_message fun(success: boolean, output: string?) Callback triggered every time the process writes to its stdout.
+---@return integer # The unique Server ID used to communicate with this process.
+function dot.start_server(cmd, on_message) end
+
+---Sends a text payload to the standard input (stdin) of a running background process.
+---@param server_id integer The unique ID of the server (returned by `dot.start_server`).
+---@param message string The data to send (must include necessary line endings like \n or \r\n).
+function dot.server_send(server_id, message) end
+
+---Return current editor mode
+---@return string # Current editor mode
+function dot.get_mode() end
+
+---Return current filename or "" if is anonymous buffer
+---@return string # Current editor mode
+function dot.get_file() end

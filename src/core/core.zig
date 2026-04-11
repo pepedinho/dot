@@ -12,6 +12,7 @@ const actions = @import("action.zig");
 const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
 const api = @import("../api/api.zig");
+const job = @import("worker.zig");
 
 const c = api.c;
 const PumManager = @import("../view/pum.zig").PumManager;
@@ -21,6 +22,8 @@ const ActionQueue = actions.ActionQueue;
 const Scheduler = scheduler.Scheduler;
 const CommandsMap = commands.CommandsMap;
 const Renderer = @import("../view/renderer.zig").Renderer;
+const JobManager = job.JobManager;
+const ServerManager = job.ServerManager;
 
 pub const CoreError = error{
     NoFileName,
@@ -128,6 +131,8 @@ pub const Editor = struct {
     vm: ?*c.lua_State = null,
     /// hooks registry
     hooks: std.StringHashMap(std.ArrayList(c_int)),
+    job_manager: JobManager,
+    server_manager: ServerManager,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var ed = Editor{
@@ -149,6 +154,8 @@ pub const Editor = struct {
             .toast_manager = ToastManager.init(allocator),
             .pum = PumManager.init(allocator),
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
+            .job_manager = JobManager.init(allocator),
+            .server_manager = ServerManager.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -208,6 +215,8 @@ pub const Editor = struct {
         self.cmd_map.deinit();
         self.toast_manager.deinit();
         self.pum.deinit();
+        self.job_manager.deinit();
+        self.server_manager.deinit();
         if (self.clipboard) |cl| self.allocator.free(cl);
     }
 
@@ -286,6 +295,7 @@ pub const Editor = struct {
                 }
 
                 self.mode = m;
+                _ = self.triggerHook("ModeChanged");
                 self.needs_redraw = true;
             },
             .Quit => self.quit(),
@@ -688,6 +698,31 @@ pub const Editor = struct {
 
             const key = try keyboard.readKey();
             try self.scheduler.update(&self.action_queue);
+            while (self.job_manager.popResult()) |result| {
+                if (self.vm) |L| {
+                    _ = api.c.lua_rawgeti(L, api.c.LUA_REGISTRYINDEX, result.ref_id);
+
+                    api.c.lua_pushboolean(L, if (result.success) 1 else 0);
+                    if (result.output) |out| {
+                        _ = api.c.lua_pushlstring(L, out.ptr, out.len);
+                    } else {
+                        api.c.lua_pushnil(L);
+                    }
+
+                    if (api.c.lua_pcallk(L, 2, 0, 0, 0, null) != 0) {
+                        const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                        self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
+                        api.c.lua_pop(L, 1);
+                    }
+
+                    if (!result.is_server_msg) {
+                        api.c.luaL_unref(L, api.c.LUA_REGISTRYINDEX, result.ref_id);
+                    }
+                }
+                if (result.output) |out| self.allocator.free(out);
+                self.needs_redraw = true;
+                self.is_dirty = true;
+            }
 
             if (key != .none) {
                 self.is_dirty = true;

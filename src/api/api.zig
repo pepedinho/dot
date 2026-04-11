@@ -1,6 +1,7 @@
 const std = @import("std");
 const core = @import("../core/core.zig");
 const style = @import("../view/style.zig");
+const job = @import("../core/worker.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -74,6 +75,11 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "get_win_size", api_get_win_size);
     registerFn(L, "add_style", api_add_style);
     registerFn(L, "clear_style", api_clear_style);
+    registerFn(L, "spawn", api_spawn);
+    registerFn(L, "start_server", api_start_server);
+    registerFn(L, "server_send", api_server_send);
+    registerFn(L, "get_mode", api_get_mode);
+    registerFn(L, "get_file", api_get_file);
 
     c.lua_setglobal(L, "dot");
     return L;
@@ -448,4 +454,114 @@ export fn api_clear_style(L: ?*c.lua_State) c_int {
     editor.needs_redraw = true;
     editor.is_dirty = true;
     return 0;
+}
+
+export fn api_spawn(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const cmd_ptr = c.luaL_checklstring(L, 1, null);
+    const cmd_str = std.mem.span(cmd_ptr);
+
+    c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
+
+    const cmd_copy = editor.allocator.dupe(u8, cmd_str) catch return 0;
+
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+
+    const thread = std.Thread.spawn(.{}, job.workerThread, .{ &editor.job_manager, editor.allocator, cmd_copy, ref_id }) catch {
+        editor.allocator.free(cmd_copy);
+        c.luaL_unref(L, c.LUA_REGISTRYINDEX, ref_id);
+        return 0;
+    };
+
+    thread.detach();
+
+    return 0;
+}
+
+export fn api_start_server(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const cmd_ptr = c.luaL_checklstring(L, 1, null);
+    const cmd_str = std.mem.span(cmd_ptr);
+
+    c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
+
+    var arena = std.heap.ArenaAllocator.init(editor.allocator);
+    const arena_alloc = arena.allocator();
+
+    var args: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, cmd_str, ' ');
+    while (it.next()) |arg| {
+        if (arg.len > 0) args.append(arena_alloc, arg) catch {};
+    }
+
+    if (args.items.len == 0) {
+        arena.deinit();
+        return 0;
+    }
+
+    const child = editor.allocator.create(std.process.Child) catch {
+        arena.deinit();
+        return 0;
+    };
+
+    child.* = std.process.Child.init(args.items, editor.allocator);
+    child.stdin_behavior = .Pipe;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Ignore;
+
+    child.spawn() catch {
+        editor.allocator.destroy(child);
+        arena.deinit();
+        return 0;
+    };
+
+    arena.deinit();
+
+    const server_id = editor.server_manager.next_id;
+    editor.server_manager.next_id += 1;
+    editor.server_manager.servers.put(server_id, child) catch {};
+
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+
+    const thread = std.Thread.spawn(.{}, job.serverReaderThread, .{ &editor.job_manager, editor.allocator, child, ref_id }) catch {
+        _ = child.kill() catch {};
+        return 0;
+    };
+    thread.detach();
+
+    c.lua_pushinteger(L, @intCast(server_id));
+    return 1;
+}
+
+export fn api_server_send(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const server_id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+    const msg_ptr = c.luaL_checklstring(L, 2, null);
+    const msg = std.mem.span(msg_ptr);
+
+    if (editor.server_manager.servers.get(server_id)) |child| {
+        if (child.stdin) |stdin| {
+            stdin.writeAll(msg) catch {};
+        }
+    }
+
+    return 0;
+}
+
+export fn api_get_mode(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const mode_name = @tagName(editor.mode);
+    _ = c.lua_pushlstring(L, mode_name, mode_name.len);
+    return 1;
+}
+
+export fn api_get_file(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+    const filename = if (view.buf.filename) |f| f else "";
+
+    _ = c.lua_pushlstring(L, filename.ptr, filename.len);
+    return 1;
 }
