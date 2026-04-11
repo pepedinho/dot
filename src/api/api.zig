@@ -80,6 +80,8 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "server_send", api_server_send);
     registerFn(L, "get_mode", api_get_mode);
     registerFn(L, "get_file", api_get_file);
+    registerFn(L, "add_ghost", api_add_ghost);
+    registerFn(L, "clear_ghosts", api_clear_ghosts);
 
     c.lua_setglobal(L, "dot");
     return L;
@@ -564,4 +566,58 @@ export fn api_get_file(L: ?*c.lua_State) c_int {
 
     _ = c.lua_pushlstring(L, filename.ptr, filename.len);
     return 1;
+}
+
+export fn api_add_ghost(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 1))) - 1;
+    var col = @as(usize, @intCast(c.luaL_checkinteger(L, 2))) - 1;
+
+    const text_ptr = c.luaL_checklstring(L, 3, null);
+    const text_str = std.mem.span(text_ptr);
+    const text_copy = editor.allocator.dupe(u8, text_str) catch return 0;
+
+    var prefix_copy: ?[]const u8 = null;
+
+    if (c.lua_type(L, 4) == c.LUA_TSTRING) {
+        const prefix_ptr = c.lua_tolstring(L, 4, null);
+        prefix_copy = editor.allocator.dupe(u8, std.mem.span(prefix_ptr)) catch null;
+    }
+
+    var theme = style.Style{};
+    if (c.lua_istable(L, 5)) {
+        _ = c.lua_getfield(L, 5, "fg");
+        if (c.lua_isnumber(L, -1) != 0) {
+            theme.fg = @enumFromInt(c.lua_tointegerx(L, -1, null));
+        }
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, 5, "italic");
+        if (c.lua_isboolean(L, -1)) {
+            theme.italic = c.lua_toboolean(L, -1) != 0;
+        }
+        c.lua_pop(L, 1);
+    }
+    if (prefix_copy) |p| {
+        const visible_len = std.unicode.utf8CountCodepoints(p) catch p.len;
+        col += visible_len;
+    }
+
+    editor.ghost_manager.push(row, col, text_copy, prefix_copy, theme) catch {};
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_clear_ghosts(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    editor.ghost_manager.clear();
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+
+    return 0;
 }

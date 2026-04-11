@@ -106,3 +106,15 @@ function dot.get_mode() end
 ---Return current filename or "" if is anonymous buffer
 ---@return string # Current editor mode
 function dot.get_file() end
+
+---Injects a virtual "Ghost Line" directly into the editor view below a specific line.
+---Used to display LSP diagnostics or inline hints without modifying the actual buffer.
+---@param row integer The line number under which the ghost line will appear (1-indexed).
+---@param col integer The column offset for indentation (1-indexed).
+---@param text string The main text to display (e.g., the error message).
+---@param prefix string? An optional prefix string (e.g., "└── ").
+---@param style {fg?: integer, bg?: integer, bold?: boolean, italic?: boolean} The formatting style.
+function dot.add_ghost(row, col, text, prefix, style) end
+
+---Clears all currently active Ghost Lines from the editor view.
+function dot.clear_ghosts() end

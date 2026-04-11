@@ -35,7 +35,7 @@ local function sync_buffer_to_lsp()
 
 	local change_msg = make_notification("textDocument/didChange", {
 		textDocument = {
-			-- uri = real_uri,
+			uri = real_uri,
 			version = file_version,
 		},
 		contentChanges = { { text = full_text } },
@@ -81,6 +81,7 @@ local function handle_lsp_message(data)
 		dot.server_send(zls_id, did_open_msg)
 	elseif data.method == "textDocument/publishDiagnostics" then
 		dot.clear_style()
+		dot.clear_ghosts()
 		local diags = data.params.diagnostics
 		if #diags > 0 then
 			dot.print("⚠️ ZLS Found " .. #diags .. " error(s) !")
@@ -93,6 +94,7 @@ local function handle_lsp_message(data)
 				end
 
 				dot.add_style(row, col, length, { fg = 31, underline = true })
+				dot.add_ghost(row, col, diag.message, "└── ", { fg = 31, italic = true })
 			end
 		else
 			dot.print("✅ No error !")
