@@ -103,77 +103,9 @@ pub const Renderer = struct {
     pub fn updateCurrentLine(self: *Renderer, editor: *Editor, stdout: anytype) !void {
         if (editor.mode == .Command) return;
 
-        var arena = std.heap.ArenaAllocator.init(self.allocator);
-        defer arena.deinit();
-        // const frame_alloc = arena.allocator(); // Ready for syntax highlighting
-
         const view = editor.getActiveView();
-        const buf = view.buf;
-        const pos = buf.getCursorPos();
-        var layout_shift: usize = 0;
-        for (editor.ghost_manager.ghosts.items) |g| {
-            if (g.buffer_row < pos.y - 1) {
-                layout_shift += 1;
-            }
-        }
-
-        const screen_y = view.y + pos.y - view.row_offset - 1 + layout_shift;
-        const screen_x = view.x + pos.x - view.col_offset - 1;
-
-        try stdout.writeAll(ansi.hide_cursor);
-        try ansi.goto(stdout, screen_y, view.x);
-        var start_of_line = buf.gap_start;
-        while (start_of_line > 0 and buf.buffer[start_of_line - 1] != '\n') {
-            start_of_line -= 1;
-        }
-
-        var end_of_line = buf.gap_end;
-        while (end_of_line < buf.buffer.len and buf.buffer[end_of_line] != '\n') {
-            end_of_line += 1;
-        }
-
-        var current_col: usize = 1;
-        var drawn_chars: usize = 0;
-        const parts = [_][]const u8{ buf.buffer[start_of_line..buf.gap_start], buf.buffer[buf.gap_end..end_of_line] };
-
-        for (parts) |part| {
-            for (part) |c| {
-                if (c == '\t') {
-                    for (0..TAB_SIZE) |_| {
-                        if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                            try stdout.writeAll(" ");
-                            drawn_chars += 1;
-                        }
-                        current_col += 1;
-                    }
-                } else {
-                    if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
-                        try stdout.writeAll(&[_]u8{c});
-                        drawn_chars += 1;
-                    }
-                    current_col += 1;
-                }
-            }
-        }
-
-        while (drawn_chars < view.width) : (drawn_chars += 1) {
-            try stdout.writeAll(" ");
-        }
-
-        // Handle Z-Index popups
-        var it = editor.pop_store.valueIterator();
-        while (it.next()) |p| {
-            const pop_top = p.pos.y;
-            const pop_bottom = p.pos.y + p.size.y - 1;
-            if (screen_y >= pop_top and screen_y <= pop_bottom) {
-                try pop.render(stdout, p);
-            }
-        }
-
-        try editor.toast_manager.render(stdout, editor.win.cols, editor.win.rows);
-        try editor.pum.render(stdout);
-        try ansi.goto(stdout, screen_y, screen_x);
-        try stdout.writeAll(ansi.show_cursor);
+        view.is_dirty = true;
+        try self.refreshDirtyViews(editor, stdout);
     }
 
     /// Rendering Speed 4: Animations Only.
