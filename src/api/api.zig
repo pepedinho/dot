@@ -107,10 +107,13 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     c.lua_setglobal(L, "dot");
 
     const home = std.posix.getenv("HOME") orelse ".";
+    const pwd = std.posix.getenv("PWD") orelse ".";
 
     const lua_path_setup = std.fmt.allocPrint(editor.allocator,
-        \\package.path = package.path .. ';{s}/.config/dot/lua/?.lua;{s}/.config/dot/lua/?/init.lua'
-    , .{ home, home }) catch return L;
+        \\package.path = package.path .. 
+        \\';{s}/.config/dot/lua/?.lua;{s}/.config/dot/lua/?/init.lua' ..
+        \\';{s}/runtime/lua/?.lua;{s}/runtime/lua/?/init.lua'
+    , .{ home, home, pwd, pwd }) catch return L;
 
     const lua_path_c = editor.allocator.dupeZ(u8, lua_path_setup) catch return L;
     defer {
