@@ -181,6 +181,33 @@ pub const Editor = struct {
     /// Init lua VM
     pub fn startLua(self: *Editor) void {
         self.vm = api.init(self) catch null;
+
+        self.bootstrapConfig() catch {};
+
+        if (self.vm) |L| {
+            const home = std.posix.getenv("HOME") orelse ".";
+            const init_path = std.fmt.allocPrint(self.allocator, "{s}/.config/dot/init.lua", .{home}) catch return;
+            const init_path_c = self.allocator.dupeZ(u8, init_path) catch return;
+
+            defer {
+                self.allocator.free(init_path);
+                self.allocator.free(init_path_c);
+            }
+
+            if (api.c.luaL_loadfilex(L, init_path_c.ptr, null) == 0) {
+                if (api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
+                    const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                    self.toast_manager.push(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                    api.c.lua_pop(L, 1);
+                } else {
+                    self.toast_manager.push("Config loaded !", 2000, .{ .fg = ansi.Green, .bg = ansi.Black }) catch {};
+                }
+            } else {
+                const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                self.toast_manager.push(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                api.c.lua_pop(L, 1);
+            }
+        }
     }
 
     /// Return the `View` at index 'active_view_idx'
@@ -881,5 +908,58 @@ pub const Editor = struct {
             }
         }
         return prevent_default;
+    }
+
+    fn bootstrapConfig(self: *Editor) !void {
+        const home = std.posix.getenv("HOME") orelse return;
+        const config_path = try std.fmt.allocPrint(self.allocator, "{s}/.config/dot", .{home});
+        defer self.allocator.free(config_path);
+
+        std.fs.cwd().access(config_path, .{}) catch |err| {
+            if (err != error.FileNotFound) return;
+
+            var arena = std.heap.ArenaAllocator.init(self.allocator);
+            defer arena.deinit();
+            const aa = arena.allocator();
+
+            const core_dir = try std.fmt.allocPrint(aa, "{s}/lua/core", .{config_path});
+
+            try std.fs.cwd().makePath(core_dir);
+            try std.fs.cwd().makePath(try std.fmt.allocPrint(aa, "{s}/lua/plugins", .{config_path}));
+            try std.fs.cwd().makePath(try std.fmt.allocPrint(aa, "{s}/.meta", .{config_path}));
+
+            const dot_lua_content = @embedFile("../api/dot.lua");
+            const meta_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.meta/dot.lua", .{config_path}), .{});
+            try meta_file.writeAll(dot_lua_content);
+            meta_file.close();
+
+            const luarc_content =
+                \\{
+                \\    "workspace": { "library": [".meta"], "checkThirdParty": false },
+                \\    "diagnostics": { "globals": ["dot"] }
+                \\}
+            ;
+
+            const luarc_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.luarc.json", .{config_path}), .{});
+            try luarc_file.writeAll(luarc_content);
+            luarc_file.close();
+
+            const keymaps_content =
+                \\-- Core Config File 
+                \\dot.print("Core loaded !")
+                \\
+            ;
+            const keymaps_path = try std.fmt.allocPrint(aa, "{s}/keymaps.lua", .{core_dir});
+            const keymaps_file = try std.fs.createFileAbsolute(keymaps_path, .{});
+            defer keymaps_file.close();
+            try keymaps_file.writeAll(keymaps_content);
+
+            const init_content = "-- Welcome to Dot !\nrequire('core.keymaps')\n";
+            const init_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path}), .{});
+            try init_file.writeAll(init_content);
+            init_file.close();
+
+            try self.toast_manager.push("Install done !", 3000, .{ .fg = ansi.White, .bg = ansi.Green, .bold = true });
+        };
     }
 };

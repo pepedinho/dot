@@ -105,6 +105,26 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "clear_ghosts", api_clear_ghosts);
 
     c.lua_setglobal(L, "dot");
+
+    const home = std.posix.getenv("HOME") orelse ".";
+    const pwd = std.posix.getenv("PWD") orelse ".";
+
+    const lua_path_setup = std.fmt.allocPrint(editor.allocator,
+        \\package.path = package.path .. 
+        \\';{s}/.config/dot/lua/?.lua;{s}/.config/dot/lua/?/init.lua' ..
+        \\';{s}/runtime/lua/?.lua;{s}/runtime/lua/?/init.lua'
+    , .{ home, home, pwd, pwd }) catch return L;
+
+    const lua_path_c = editor.allocator.dupeZ(u8, lua_path_setup) catch return L;
+    defer {
+        editor.allocator.free(lua_path_setup);
+        editor.allocator.free(lua_path_c);
+    }
+
+    if (c.luaL_loadstring(L, lua_path_c.ptr) == 0) {
+        _ = c.lua_pcallk(L, 0, c.LUA_MULTRET, 0, 0, null);
+    }
+
     return L;
 }
 
@@ -401,9 +421,11 @@ export fn api_read_dir(L: ?*c.lua_State) c_int {
 
     c.lua_newtable(L);
 
-    var dir = std.fs.cwd().openDir(target, .{ .iterate = true }) catch {
-        return 1;
-    };
+    var dir = if (std.fs.path.isAbsolute(target))
+        std.fs.openDirAbsolute(target, .{ .iterate = true }) catch return 1
+    else
+        std.fs.cwd().openDir(target, .{ .iterate = true }) catch return 1;
+
     defer dir.close();
 
     var it = dir.iterate();
