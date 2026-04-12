@@ -181,6 +181,31 @@ pub const Editor = struct {
     /// Init lua VM
     pub fn startLua(self: *Editor) void {
         self.vm = api.init(self) catch null;
+
+        if (self.vm) |L| {
+            const home = std.posix.getenv("HOME") orelse ".";
+            const init_path = std.fmt.allocPrint(self.allocator, "{s}/.config/dot/init.lua", .{home}) catch return;
+            const init_path_c = self.allocator.dupeZ(u8, init_path) catch return;
+
+            defer {
+                self.allocator.free(init_path);
+                self.allocator.free(init_path_c);
+            }
+
+            if (api.c.luaL_loadfilex(L, init_path_c.ptr, null) == 0) {
+                if (api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
+                    const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                    self.toast_manager.push(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                    api.c.lua_pop(L, 1);
+                } else {
+                    self.toast_manager.push("Config loaded !", 2000, .{ .fg = ansi.Green, .bg = ansi.Black }) catch {};
+                }
+            } else {
+                const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                self.toast_manager.push(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                api.c.lua_pop(L, 1);
+            }
+        }
     }
 
     /// Return the `View` at index 'active_view_idx'
