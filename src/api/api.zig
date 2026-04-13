@@ -706,7 +706,7 @@ export fn api_set_keymap(L: ?*c.lua_State) c_int {
     };
 
     const key_str = std.mem.span(c.luaL_checklstring(L, 2, null));
-    const parsed_key = utils.parseKeyString(key_str) orelse return 0;
+    const parsed_key = utils.parseKeySequence(editor.allocator, key_str) catch return 0;
 
     c.luaL_checktype(L, 3, c.LUA_TFUNCTION);
     const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);

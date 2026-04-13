@@ -9,26 +9,27 @@ pub fn isDigitSlice(s: []const u8) bool {
     return s.len > 0;
 }
 
-pub fn parseKeyString(key_str: []const u8) ?u8 {
-    if (key_str.len == 0) return null;
+pub fn parseKeySequence(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
 
-    if (key_str.len == 1) return key_str[0];
-
-    if (key_str[0] == '<' and key_str[key_str.len - 1] == '>') {
-        const inner = key_str[1 .. key_str.len - 1];
-
-        if (inner.len == 3 and inner[0] == 'C' and inner[1] == '-') {
-            const char = inner[2];
-            if (char >= 'a' and char <= 'z') {
-                return char - 'a' + 1;
-            }
-            if (char >= 'A' and char <= 'Z') {
-                return char - 'A' + 1;
+    var i: usize = 0;
+    while (i < input.len) {
+        if (input[i] == '<' and i + 4 < input.len and input[i + 1] == 'C' and input[i + 2] == '-') {
+            const char = input[i + 3];
+            if (input[i + 4] == '>') {
+                if (char >= 'a' and char <= 'z') {
+                    try out.append(allocator, char - 'a' + 1);
+                } else if (char >= 'A' and char <= 'Z') {
+                    try out.append(allocator, char - 'A' + 1);
+                }
+                i += 5;
+                continue;
             }
         }
-
-        if (std.mem.eql(u8, inner, "CR")) return '\r';
-        if (std.mem.eql(u8, inner, "Esc")) return '\x1b';
+        try out.append(allocator, input[i]);
+        i += 1;
     }
-    return null;
+
+    return out.toOwnedSlice(allocator);
 }

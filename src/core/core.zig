@@ -107,7 +107,8 @@ pub const Editor = struct {
     /// Used to increment id for assign
     next_popup_id: u32 = 1,
     /// Store keybinds and theirs associated Action
-    key_binds: std.EnumArray(Mode, std.AutoHashMap(u8, Action)),
+    key_binds: std.EnumArray(Mode, std.StringHashMap(Action)),
+    pending_keys: std.ArrayList(u8),
     /// Ring buffer to store up 256 `Action`
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
@@ -138,9 +139,9 @@ pub const Editor = struct {
     server_manager: ServerManager,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
-        var binds = std.EnumArray(Mode, std.AutoHashMap(u8, Action)).initUndefined();
+        var binds = std.EnumArray(Mode, std.StringHashMap(Action)).initUndefined();
         for (std.enums.values(Mode)) |m| {
-            binds.set(m, std.AutoHashMap(u8, Action).init(allocator));
+            binds.set(m, std.StringHashMap(Action).init(allocator));
         }
         var ed = Editor{
             .allocator = allocator,
@@ -153,6 +154,7 @@ pub const Editor = struct {
             .cmd_buf = .empty,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = binds,
+            .pending_keys = .empty,
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
@@ -245,8 +247,11 @@ pub const Editor = struct {
         self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
         for (&self.key_binds.values) |*mm| {
+            var ite = mm.keyIterator();
+            while (ite.next()) |k| self.allocator.free(k.*);
             mm.deinit();
         }
+        self.pending_keys.deinit(self.allocator);
         self.cmd_buf.deinit(self.allocator);
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
@@ -281,10 +286,10 @@ pub const Editor = struct {
     }
 
     /// Store a new keybind in `self.key_binds`
-    pub fn registerKeyBind(self: *Editor, mode: Mode, key: u8, action: Action) !void {
+    pub fn registerKeyBind(self: *Editor, mode: Mode, key: []const u8, action: Action) !void {
         var mode_map = self.key_binds.getPtr(mode);
-
-        try mode_map.put(key, action);
+        const key_dupe = try self.allocator.dupe(u8, key);
+        try mode_map.put(key_dupe, action);
     }
 
     /// Applies the logic associated with an `Action`
@@ -782,22 +787,26 @@ pub const Editor = struct {
                     .Normal => {
                         switch (key) {
                             .ascii => |ch| {
-                                const binds = self.key_binds.getPtr(self.mode);
-                                if (binds.get(ch)) |a| {
-                                    try self.pushAction(a);
-                                }
+                                try self.handleKeyPress(ch);
                             },
                             .left => try self.pushAction(.MoveLeft),
                             .right => try self.pushAction(.MoveRight),
                             .down => try self.pushAction(.MoveDown),
                             .up => try self.pushAction(.MoveUp),
-                            else => {},
+                            else => {
+                                self.pending_keys.clearRetainingCapacity();
+                            },
                         }
                     },
                     .Insert => {
                         switch (key) {
-                            .escape => try self.pushAction(.{ .SetMode = .Normal }),
-                            .ascii => |ch| try self.pushAction(.{ .InsertChar = ch }),
+                            .escape => {
+                                try self.pushAction(.{ .SetMode = .Normal });
+                                self.pending_keys.clearRetainingCapacity();
+                            },
+                            .ascii => |ch| {
+                                try self.handleKeyPress(ch);
+                            },
                             .enter => try self.pushAction(.InsertNewLine),
                             .backspace => try self.pushAction(.DeleteChar),
                             .left => try self.pushAction(.MoveLeft),
@@ -813,11 +822,12 @@ pub const Editor = struct {
                                 if (!self.triggerHook("CmdEsc")) {
                                     try self.pushAction(.{ .SetMode = .Normal });
                                 }
+                                self.pending_keys.clearRetainingCapacity();
                             },
                             .ascii => |ch| {
                                 if (ch == '\t') {
                                     _ = self.triggerHook("CmdTab");
-                                } else try self.pushAction(.{ .CommandChar = ch });
+                                } else try self.handleKeyPress(ch);
                             },
                             .backspace => {
                                 _ = self.triggerHook("CmdBackSpace");
@@ -827,7 +837,9 @@ pub const Editor = struct {
                                 if (!self.triggerHook("CmdEnter"))
                                     try self.pushAction(.ExecuteCommand);
                             },
-                            else => {},
+                            else => {
+                                self.pending_keys.clearRetainingCapacity();
+                            },
                         }
                     },
                 }
@@ -845,6 +857,40 @@ pub const Editor = struct {
             }
             try self.win.updateSize();
             std.Thread.sleep(16_000_000);
+        }
+    }
+
+    pub fn handleKeyPress(self: *Editor, ch: u8) !void {
+        try self.pending_keys.append(self.allocator, ch);
+
+        const mode_map = self.key_binds.get(self.mode);
+        const current_seq = self.pending_keys.items;
+
+        if (mode_map.get(current_seq)) |action| {
+            try self.pushAction(action);
+            self.pending_keys.clearRetainingCapacity();
+            return;
+        }
+
+        var is_prefix = false;
+        var it = mode_map.keyIterator();
+        while (it.next()) |k| {
+            if (std.mem.startsWith(u8, k.*, current_seq)) {
+                is_prefix = true;
+                break;
+            }
+        }
+
+        if (!is_prefix) {
+            if (self.pending_keys.items.len == 1) {
+                switch (self.mode) {
+                    .Insert => try self.pushAction(.{ .InsertChar = ch }),
+                    .Command, .Search => try self.pushAction(.{ .CommandChar = ch }),
+                    .Normal => {},
+                }
+            }
+
+            self.pending_keys.clearRetainingCapacity();
         }
     }
 
