@@ -132,3 +132,6 @@ function dot.clear_ghosts() end
 ---@param key string They key triggered callback
 ---@param callback function The callback function which be called by dot
 function set_keymap(mode, key, callback) end
+
+--- Save current buffer into it associated file
+function save_current_file() end

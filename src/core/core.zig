@@ -107,7 +107,7 @@ pub const Editor = struct {
     /// Used to increment id for assign
     next_popup_id: u32 = 1,
     /// Store keybinds and theirs associated Action
-    key_binds: std.AutoHashMap(u8, Action),
+    key_binds: std.EnumArray(Mode, std.AutoHashMap(u8, Action)),
     /// Ring buffer to store up 256 `Action`
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
@@ -138,6 +138,10 @@ pub const Editor = struct {
     server_manager: ServerManager,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
+        var binds = std.EnumArray(Mode, std.AutoHashMap(u8, Action)).initUndefined();
+        for (std.enums.values(Mode)) |m| {
+            binds.set(m, std.AutoHashMap(u8, Action).init(allocator));
+        }
         var ed = Editor{
             .allocator = allocator,
             .buffers = .empty,
@@ -148,7 +152,7 @@ pub const Editor = struct {
             .win = try Window.init(),
             .cmd_buf = .empty,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
-            .key_binds = std.AutoHashMap(u8, Action).init(allocator),
+            .key_binds = binds,
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
             .last_fps_time = std.time.milliTimestamp(),
@@ -240,7 +244,9 @@ pub const Editor = struct {
         self.renderer.deinit();
         self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
-        self.key_binds.deinit();
+        for (&self.key_binds.values) |*mm| {
+            mm.deinit();
+        }
         self.cmd_buf.deinit(self.allocator);
         self.views.deinit(self.allocator);
         self.cmd_map.deinit();
@@ -275,8 +281,10 @@ pub const Editor = struct {
     }
 
     /// Store a new keybind in `self.key_binds`
-    pub fn registerKeyBind(self: *Editor, key: u8, action: Action) !void {
-        try self.key_binds.put(key, action);
+    pub fn registerKeyBind(self: *Editor, mode: Mode, key: u8, action: Action) !void {
+        var mode_map = self.key_binds.getPtr(mode);
+
+        try mode_map.put(key, action);
     }
 
     /// Applies the logic associated with an `Action`
@@ -774,7 +782,8 @@ pub const Editor = struct {
                     .Normal => {
                         switch (key) {
                             .ascii => |ch| {
-                                if (self.key_binds.get(ch)) |a| {
+                                const binds = self.key_binds.getPtr(self.mode);
+                                if (binds.get(ch)) |a| {
                                     try self.pushAction(a);
                                 }
                             },

@@ -3,6 +3,7 @@ const core = @import("../core/core.zig");
 const style = @import("../view/style.zig");
 const job = @import("../core/worker.zig");
 const ansi = @import("../view/ansi.zig");
+const utils = @import("../utils.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -104,6 +105,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "add_ghost", api_add_ghost);
     registerFn(L, "clear_ghosts", api_clear_ghosts);
     registerFn(L, "set_keymap", api_set_keymap);
+    registerFn(L, "save_current_file", api_save_current_file);
 
     c.lua_setglobal(L, "dot");
 
@@ -692,13 +694,34 @@ export fn api_clear_ghosts(L: ?*c.lua_State) c_int {
 export fn api_set_keymap(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
 
+    const mode_str = std.mem.span(c.luaL_checklstring(L, 1, null));
+    if (mode_str.len == 0) return 0;
+
+    const target_mode: core.Mode = switch (mode_str[0]) {
+        'n' => .Normal,
+        'i' => .Insert,
+        'c' => .Command,
+        'v' => .Search,
+        else => return 0,
+    };
+
     const key_str = std.mem.span(c.luaL_checklstring(L, 2, null));
-    if (key_str.len == 0) return 0;
-    const key = key_str[0];
+    const parsed_key = utils.parseKeyString(key_str) orelse return 0;
 
     c.luaL_checktype(L, 3, c.LUA_TFUNCTION);
     const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
 
-    editor.registerKeyBind(key, .{ .LuaCallback = ref_id }) catch {};
+    var mode_map = editor.key_binds.getPtr(target_mode);
+    mode_map.put(parsed_key, .{ .LuaCallback = ref_id }) catch {};
+    return 0;
+}
+
+export fn api_save_current_file(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    editor.saveFile() catch {
+        // TODO: return error message
+    };
+
     return 0;
 }
