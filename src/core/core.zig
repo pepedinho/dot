@@ -312,6 +312,18 @@ pub const Editor = struct {
                     self.is_dirty = true;
                 }
             },
+            .LuaCallback => |ref_id| {
+                if (self.vm) |L| {
+                    _ = api.c.lua_rawgeti(L, api.c.LUA_REGISTRYINDEX, ref_id);
+
+                    if (api.c.lua_pcallk(L, 0, 0, 0, 0, null) != 0) {
+                        const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                        self.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+                        api.c.lua_pop(L, 1);
+                    }
+                    self.needs_redraw = true;
+                }
+            },
             .SetMode => |m| {
                 self.last_mode = self.mode;
                 if (self.mode == .Command) {

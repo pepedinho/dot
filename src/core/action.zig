@@ -32,6 +32,7 @@ pub const Action = union(enum) {
     // GotoView: u8,
     Quit,
     Tick,
+    LuaCallback: c_int,
 };
 
 /// ActionQueue is the Action constainer that the `Scheduler` use to store Action in a ring stack-allocatd buffer

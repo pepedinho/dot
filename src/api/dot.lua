@@ -127,3 +127,8 @@ function dot.add_ghost(row, col, text, prefix, style) end
 
 ---Clears all currently active Ghost Lines from the editor view.
 function dot.clear_ghosts() end
+---Add keymap to editor
+---@param mode string The editor mode targeted 'n' 'i' 'c' ...
+---@param key string They key triggered callback
+---@param callback function The callback function which be called by dot
+function set_keymap(mode, key, callback) end

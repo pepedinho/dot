@@ -103,6 +103,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "get_file", api_get_file);
     registerFn(L, "add_ghost", api_add_ghost);
     registerFn(L, "clear_ghosts", api_clear_ghosts);
+    registerFn(L, "set_keymap", api_set_keymap);
 
     c.lua_setglobal(L, "dot");
 
@@ -685,5 +686,19 @@ export fn api_clear_ghosts(L: ?*c.lua_State) c_int {
     editor.needs_redraw = true;
     editor.is_dirty = true;
 
+    return 0;
+}
+
+export fn api_set_keymap(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const key_str = std.mem.span(c.luaL_checklstring(L, 2, null));
+    if (key_str.len == 0) return 0;
+    const key = key_str[0];
+
+    c.luaL_checktype(L, 3, c.LUA_TFUNCTION);
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+
+    editor.registerKeyBind(key, .{ .LuaCallback = ref_id }) catch {};
     return 0;
 }
