@@ -171,7 +171,6 @@ pub const Editor = struct {
         const main_buf = try allocator.create(buffer.GapBuffer);
         main_buf.* = try buffer.GapBuffer.init(allocator);
         try ed.buffers.append(allocator, main_buf);
-
         try ed.views.append(ed.allocator, pane.View{
             .x = 1,
             .y = 1,
@@ -362,7 +361,11 @@ pub const Editor = struct {
                 try view.buf.history.recordInsert(view.buf.gap_start, ch);
 
                 try view.buf.insertChar(ch);
-                view.is_dirty = true;
+                for (self.views.items) |*v| {
+                    if (v.buf == view.buf) {
+                        v.is_dirty = true;
+                    }
+                }
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
@@ -379,7 +382,11 @@ pub const Editor = struct {
 
                 const delete_nl = char_to_delete == '\n';
                 view.buf.backspace();
-                view.is_dirty = true;
+                for (self.views.items) |*v| {
+                    if (v.buf == view.buf) {
+                        v.is_dirty = true;
+                    }
+                }
                 self.needs_redraw = delete_nl;
             },
             .MoveLeft => {
