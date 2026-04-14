@@ -1,6 +1,7 @@
 local M = {}
 
 local registry = {}
+M.history = {}
 
 M.create = function(name, callback)
 	registry[name] = callback
@@ -27,6 +28,9 @@ dot.hook_on("CmdEnter", function()
 	local cmd_line = dot.get_cmdline()
 	local cmd_name, args = cmd_line:match("^%s*(%S+)%s*(.*)$")
 
+	if cmd_line and cmd_line ~= "" then
+		table.insert(M.history, cmd_line)
+	end
 	if not cmd_name then
 		return false
 	end

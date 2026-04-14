@@ -818,6 +818,18 @@ pub const Editor = struct {
                                 if (!self.triggerHook("CmdEnter"))
                                     try self.pushAction(.ExecuteCommand);
                             },
+                            .up => {
+                                _ = self.triggerHook("Up");
+                            },
+                            .down => {
+                                _ = self.triggerHook("Down");
+                            },
+                            .left => {
+                                _ = self.triggerHook("Left");
+                            },
+                            .right => {
+                                _ = self.triggerHook("Right");
+                            },
                             else => {
                                 self.pending_keys.clearRetainingCapacity();
                             },
@@ -1023,16 +1035,54 @@ pub const Editor = struct {
             luarc_file.close();
 
             const keymaps_content =
-                \\-- Core Config File 
+                \\-- Core Config File
                 \\dot.print("Core loaded !")
-                \\
+                \\local keymaps = require("dot.keymaps")
+                \\keymaps.set("n", "<C-s>", function()
+                \\        dot.save_current_file()
+                \\        dot.print("File saved !")
+                \\end)
+                \\keymaps.set("n", "dd", function()
+                \\        local cursor = dot.get_cursor()
+                \\        local row = cursor[1]
+                \\        dot.set_lines(row, row, {})
+                \\        dot.print("line " .. row .. "deleted")
+                \\end)
+                \\keymaps.set("n", "gg", function()
+                \\        dot.jump_to(0)
+                \\end)
+                \\keymaps.set("n", "G", function()
+                \\        dot.jump_to(9999999)
+                \\end)
             ;
             const keymaps_path = try std.fmt.allocPrint(aa, "{s}/keymaps.lua", .{core_dir});
             const keymaps_file = try std.fs.createFileAbsolute(keymaps_path, .{});
             defer keymaps_file.close();
             try keymaps_file.writeAll(keymaps_content);
 
-            const init_content = "-- Welcome to Dot !\nrequire('core.keymaps')\n";
+            const cmd_content =
+                \\local cmd = require("dot.commands")
+                \\function oui()
+                \\        dot.print("oui")
+                \\end
+                \\cmd.create("oui", oui)
+            ;
+
+            const cmd_path = try std.fmt.allocPrint(aa, "{s}/cmd.lua", .{core_dir});
+            const cmd_file = try std.fs.createFileAbsolute(cmd_path, .{});
+            defer cmd_file.close();
+            try cmd_file.writeAll(cmd_content);
+
+            const init_content =
+                \\-- Welcome to Dot !
+                \\require("core.keymaps")
+                \\require("core.cmd")
+                \\local plugins = require("dot.plugin_manager")
+                \\plugins.setup({
+                \\        cmd_completion = true,
+                \\        cmd_history = true,
+                \\})
+            ;
             const init_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path}), .{});
             try init_file.writeAll(init_content);
             init_file.close();

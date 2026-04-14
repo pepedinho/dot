@@ -143,3 +143,7 @@ function dot.get_native_cmds() end
 --- change editor mode to target mode parameter ("n, i, c,...")
 --- @param mode string The editor mode targeted 'n' 'i' 'c' ...
 function dot.set_mode(mode) end
+
+--- Jump to row line
+--- @param row integer The target line
+function dot.jump_to(row) end

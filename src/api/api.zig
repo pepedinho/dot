@@ -108,6 +108,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "save_current_file", api_save_current_file);
     registerFn(L, "get_native_cmds", api_get_native_cmds);
     registerFn(L, "set_mode", api_set_mode);
+    registerFn(L, "jump_to", api_jump_to);
 
     c.lua_setglobal(L, "dot");
 
@@ -759,5 +760,12 @@ export fn api_set_mode(L: ?*c.lua_State) c_int {
 
     editor.last_mode = editor.mode;
     editor.mode = target_mode;
+    return 0;
+}
+
+export fn api_jump_to(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const row = c.luaL_checkinteger(L, 1);
+    editor.getActiveView().buf.jumpTo(.{ .y = @as(usize, @intCast(row)), .x = 0 });
     return 0;
 }
