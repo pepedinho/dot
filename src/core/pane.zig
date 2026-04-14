@@ -50,8 +50,8 @@ pub const View = struct {
             self.col_offset = pos.x - 1;
             camera_moved = true;
         }
-        if (pos.x >= self.col_offset + self.width) {
-            self.col_offset = pos.x - self.width + 1;
+        if (pos.x >= self.col_offset + (self.width - self.gutter_width)) {
+            self.col_offset = pos.x - (self.width - self.gutter_width) + 1;
             camera_moved = true;
         }
 
