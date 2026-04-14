@@ -102,12 +102,24 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
     };
     defer ed.allocator.free(content);
 
+    for (ed.buffers.items) |buf| {
+        if (buf.filename) |f| {
+            if (std.mem.eql(u8, f, args)) {
+                const view = ed.getActiveView();
+                view.buf = buf;
+                view.col_offset = 0;
+                view.row_offset = 0;
+                ed.needs_redraw = true;
+                return;
+            }
+        }
+    }
+
     const new_buf = try ed.allocator.create(buffer.GapBuffer);
     new_buf.* = try buffer.GapBuffer.initFromFile(ed.allocator, content, args);
 
-    try ed.buffers.append(ed.allocator, new_buf);
-
     const view = ed.getActiveView();
+    try ed.buffers.append(ed.allocator, new_buf);
     view.buf = new_buf;
     view.col_offset = 0;
     view.row_offset = 0;
