@@ -272,12 +272,7 @@ pub const Renderer = struct {
                         screen_row += 1;
                         need_gutter = true;
 
-                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(
-                            stdout, current_row - 1, 
-                            @as(u16, @intCast(view.x + view.gutter_width)), 
-                            @as(u16, @intCast(screen_row)), 
-                            @as(u16, @intCast(max_rows))
-                        );
+                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(stdout, current_row - 1, @as(u16, @intCast(view.x + view.gutter_width)), @as(u16, @intCast(screen_row)), @as(u16, @intCast(max_rows)));
 
                         screen_row += ghosts_drawn;
 
@@ -327,7 +322,7 @@ pub const Renderer = struct {
         while (screen_row <= max_rows) : (screen_row += 1) {
             try ansi.goto(stdout, screen_row, view.x);
             try stdout.writeAll("\x1b[90m");
-            
+
             const req_space = 2; // "~ "
             const padding = if (view.gutter_width > req_space) view.gutter_width - req_space else 0;
             for (0..padding) |_| try stdout.writeAll(" ");
@@ -344,7 +339,11 @@ pub const Renderer = struct {
     fn drawGutter(self: *Renderer, stdout: anytype, view: *View, row: usize, screen_row: usize) !void {
         _ = self;
         try ansi.goto(stdout, screen_row, view.x);
-        try stdout.writeAll("\x1b[90m"); // Gris foncé
+        const current_row = view.buf.getCursorPos().y;
+
+        if (row == current_row) {
+            try ansi.Magenta.writeFg(stdout);
+        } else try stdout.writeAll("\x1b[90m");
 
         var num_buf: [16]u8 = undefined;
         const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{row}) catch "err";
