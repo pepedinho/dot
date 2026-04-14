@@ -857,7 +857,8 @@ pub const Editor = struct {
                 self.last_fps_time = now_fps;
             }
             try self.win.updateSize();
-            std.Thread.sleep(16_000_000);
+            if (key == .none and self.action_queue.count() == 0)
+                std.Thread.sleep(16_000_000);
         }
     }
 
