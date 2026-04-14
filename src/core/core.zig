@@ -567,6 +567,8 @@ pub const Editor = struct {
             if (utils.isDigitSlice(cmd)) {
                 const l = try std.fmt.parseInt(usize, cmd, 10);
                 self.getActiveView().buf.jumpTo(.{ .x = 1, .y = l });
+                const view = self.getActiveView();
+                view.row_offset = l - (view.height / 2);
             } else {
                 try self.registerPop(null, null, "Unknown command", 2000);
             }

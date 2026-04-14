@@ -223,13 +223,12 @@ pub const Renderer = struct {
                 }
             }
             const screen_y = view.y + pos.y - view.row_offset - 1 + layout_shift;
-            const screen_x = view.x + pos.x - view.col_offset - 1;
+            const screen_x = view.x + view.gutter_width + pos.x - view.col_offset - 1;
             try ansi.goto(stdout, screen_y, screen_x);
         }
     }
 
     fn renderView(self: *Renderer, stdout: anytype, editor: *Editor, view: *View) !void {
-        _ = self;
         const part1 = view.buf.getFirst();
         const part2 = view.buf.getSecond();
 
@@ -239,16 +238,21 @@ pub const Renderer = struct {
         var screen_row = view.y;
         const max_rows = view.y + view.height - 1;
 
-        try ansi.goto(stdout, screen_row, view.x);
+        const text_width = view.width - view.gutter_width;
+        var need_gutter = true;
 
         const parts = [_][]const u8{ part1, part2 };
         for (parts, 0..) |part, p_idx| {
             for (part, 0..) |c, c_idx| {
                 if (screen_row > max_rows) break;
 
+                if (need_gutter and current_row > view.row_offset) {
+                    try self.drawGutter(stdout, view, current_row, screen_row);
+                    need_gutter = false;
+                }
+
                 const logical_idx = if (p_idx == 0) c_idx else view.buf.gap_start + c_idx;
 
-                // var is_highlighted = false;
                 var active_style: ?style.Style = null;
                 for (view.buf.extmarks.items) |mark| {
                     if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
@@ -262,12 +266,13 @@ pub const Renderer = struct {
                         var pad_col = current_col;
                         if (pad_col <= view.col_offset) pad_col = view.col_offset + 1;
 
-                        while (pad_col <= view.col_offset + view.width) : (pad_col += 1) {
+                        while (pad_col <= view.col_offset + text_width) : (pad_col += 1) {
                             try stdout.writeAll(" ");
                         }
                         screen_row += 1;
+                        need_gutter = true;
 
-                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(stdout, current_row - 1, @as(u16, @intCast(view.x)), @as(u16, @intCast(screen_row)), @as(u16, @intCast(max_rows)));
+                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(stdout, current_row - 1, @as(u16, @intCast(view.x + view.gutter_width)), @as(u16, @intCast(screen_row)), @as(u16, @intCast(max_rows)));
 
                         screen_row += ghosts_drawn;
 
@@ -280,7 +285,7 @@ pub const Renderer = struct {
                 } else if (c == '\t') {
                     for (0..TAB_SIZE) |_| {
                         if (current_row > view.row_offset) {
-                            if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
+                            if (current_col > view.col_offset and current_col <= view.col_offset + text_width) {
                                 try stdout.writeAll(" ");
                             }
                         }
@@ -288,7 +293,7 @@ pub const Renderer = struct {
                     }
                 } else {
                     if (current_row > view.row_offset) {
-                        if (current_col > view.col_offset and current_col <= view.col_offset + view.width) {
+                        if (current_col > view.col_offset and current_col <= view.col_offset + text_width) {
                             if (active_style) |s| try s.toAnsi(stdout);
                             try stdout.writeAll(&[_]u8{c});
                             if (active_style != null) try stdout.writeAll("\x1b[m");
@@ -300,10 +305,15 @@ pub const Renderer = struct {
         }
 
         if (screen_row <= max_rows) {
+            if (need_gutter and current_row > view.row_offset) {
+                try self.drawGutter(stdout, view, current_row, screen_row);
+                need_gutter = false;
+            }
+
             var pad_col = current_col;
             if (pad_col <= view.col_offset) pad_col = view.col_offset + 1;
 
-            while (pad_col <= view.col_offset + view.width) : (pad_col += 1) {
+            while (pad_col <= view.col_offset + text_width) : (pad_col += 1) {
                 try stdout.writeAll(" ");
             }
             screen_row += 1;
@@ -311,12 +321,46 @@ pub const Renderer = struct {
 
         while (screen_row <= max_rows) : (screen_row += 1) {
             try ansi.goto(stdout, screen_row, view.x);
-            for (0..view.width) |_| {
+            try stdout.writeAll("\x1b[90m");
+
+            const req_space = 2; // "~ "
+            const padding = if (view.gutter_width > req_space) view.gutter_width - req_space else 0;
+            for (0..padding) |_| try stdout.writeAll(" ");
+            try stdout.writeAll("~ \x1b[0m");
+
+            for (0..text_width) |_| {
                 try stdout.writeAll(" ");
             }
         }
 
         view.is_dirty = false;
+    }
+
+    fn drawGutter(self: *Renderer, stdout: anytype, view: *View, row: usize, screen_row: usize) !void {
+        _ = self;
+        try ansi.goto(stdout, screen_row, view.x);
+        const current_row = view.buf.getCursorPos().y;
+
+        if (row == current_row) {
+            try ansi.Magenta.writeFg(stdout);
+        } else try stdout.writeAll("\x1b[90m");
+
+        var num_buf: [16]u8 = undefined;
+        const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{row}) catch "err";
+        const required_space = num_str.len + 1;
+        const padding = if (view.gutter_width > required_space)
+            view.gutter_width - required_space
+        else
+            0;
+
+        for (0..padding) |_| {
+            try stdout.writeAll(" ");
+        }
+        try stdout.writeAll(num_str);
+        try stdout.writeAll(" ");
+        try stdout.writeAll("\x1b[0m");
+
+        try ansi.goto(stdout, screen_row, view.x + view.gutter_width);
     }
 
     fn traceBorder(self: *Renderer, stdout: anytype, editor: *Editor) !void {

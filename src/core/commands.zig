@@ -166,6 +166,7 @@ fn cmdDebug(ed: *Editor, args: []const u8) !void {
         const new_idx = ed.views.items.len - 1;
         ed.views.items[new_idx].is_readonly = true;
         ed.debug_view_idx = new_idx;
+        ed.views.items[new_idx].gutter_width = 0;
         try ed.scheduler.add(.{ .UpdateDebugBuffer = buf }, 100);
         ed.needs_redraw = true;
     }
