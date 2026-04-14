@@ -117,7 +117,7 @@ dot.hook_on("CmdTab", function()
 	end
 
 	if #matches == 1 then
-		dot.set_cmdline(base_prefix .. matches[1].text .. " ")
+		dot.set_cmdline(base_prefix .. matches[1].text)
 		return true
 	end
 

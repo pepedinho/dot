@@ -29,6 +29,8 @@ pub const View = struct {
     is_readonly: bool = false,
     /// If true, the UI engine will redraw this specific viewport on the next tick.
     is_dirty: bool = false,
+    /// for lines numbers
+    gutter_width: u16 = 4,
 
     pub fn scroll(self: *View) bool {
         var camera_moved = false;
