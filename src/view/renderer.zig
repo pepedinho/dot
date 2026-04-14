@@ -229,7 +229,6 @@ pub const Renderer = struct {
     }
 
     fn renderView(self: *Renderer, stdout: anytype, editor: *Editor, view: *View) !void {
-        _ = self;
         const part1 = view.buf.getFirst();
         const part2 = view.buf.getSecond();
 
@@ -242,41 +241,18 @@ pub const Renderer = struct {
         const text_width = view.width - view.gutter_width;
         var need_gutter = true;
 
-        try ansi.goto(stdout, screen_row, view.x + view.gutter_width);
-
         const parts = [_][]const u8{ part1, part2 };
         for (parts, 0..) |part, p_idx| {
             for (part, 0..) |c, c_idx| {
                 if (screen_row > max_rows) break;
 
                 if (need_gutter and current_row > view.row_offset) {
-                    try ansi.goto(stdout, screen_row, view.x);
-                    try stdout.writeAll("\x1b[90m"); // TODO: make style dynamic & scriptable by lua api
-                    var num_buf: [16]u8 = undefined;
-                    const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{current_row}) catch "err";
-
-                    const required_space = num_str.len + 1;
-
-                    const padding = if (view.gutter_width > required_space)
-                        view.gutter_width - required_space
-                    else
-                        0;
-
-                    for (0..padding) |_| {
-                        try stdout.writeAll(" ");
-                    }
-
-                    try stdout.writeAll(num_str);
-                    try stdout.writeAll(" ");
-
-                    try stdout.writeAll("\x1b[0m");
-                    try ansi.goto(stdout, screen_row, view.x + view.gutter_width);
+                    try self.drawGutter(stdout, view, current_row, screen_row);
                     need_gutter = false;
                 }
 
                 const logical_idx = if (p_idx == 0) c_idx else view.buf.gap_start + c_idx;
 
-                // var is_highlighted = false;
                 var active_style: ?style.Style = null;
                 for (view.buf.extmarks.items) |mark| {
                     if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
@@ -296,7 +272,12 @@ pub const Renderer = struct {
                         screen_row += 1;
                         need_gutter = true;
 
-                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(stdout, current_row - 1, @as(u16, @intCast(view.x + view.gutter_width)), @as(u16, @intCast(screen_row)), @as(u16, @intCast(max_rows)));
+                        const ghosts_drawn = try editor.ghost_manager.renderAtRow(
+                            stdout, current_row - 1, 
+                            @as(u16, @intCast(view.x + view.gutter_width)), 
+                            @as(u16, @intCast(screen_row)), 
+                            @as(u16, @intCast(max_rows))
+                        );
 
                         screen_row += ghosts_drawn;
 
@@ -329,6 +310,11 @@ pub const Renderer = struct {
         }
 
         if (screen_row <= max_rows) {
+            if (need_gutter and current_row > view.row_offset) {
+                try self.drawGutter(stdout, view, current_row, screen_row);
+                need_gutter = false;
+            }
+
             var pad_col = current_col;
             if (pad_col <= view.col_offset) pad_col = view.col_offset + 1;
 
@@ -340,13 +326,42 @@ pub const Renderer = struct {
 
         while (screen_row <= max_rows) : (screen_row += 1) {
             try ansi.goto(stdout, screen_row, view.x);
-            try stdout.writeAll("\x1b[90m  ~ \x1b[0m");
-            for (0..view.width) |_| {
+            try stdout.writeAll("\x1b[90m");
+            
+            const req_space = 2; // "~ "
+            const padding = if (view.gutter_width > req_space) view.gutter_width - req_space else 0;
+            for (0..padding) |_| try stdout.writeAll(" ");
+            try stdout.writeAll("~ \x1b[0m");
+
+            for (0..text_width) |_| {
                 try stdout.writeAll(" ");
             }
         }
 
         view.is_dirty = false;
+    }
+
+    fn drawGutter(self: *Renderer, stdout: anytype, view: *View, row: usize, screen_row: usize) !void {
+        _ = self;
+        try ansi.goto(stdout, screen_row, view.x);
+        try stdout.writeAll("\x1b[90m"); // Gris foncé
+
+        var num_buf: [16]u8 = undefined;
+        const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{row}) catch "err";
+        const required_space = num_str.len + 1;
+        const padding = if (view.gutter_width > required_space)
+            view.gutter_width - required_space
+        else
+            0;
+
+        for (0..padding) |_| {
+            try stdout.writeAll(" ");
+        }
+        try stdout.writeAll(num_str);
+        try stdout.writeAll(" ");
+        try stdout.writeAll("\x1b[0m");
+
+        try ansi.goto(stdout, screen_row, view.x + view.gutter_width);
     }
 
     fn traceBorder(self: *Renderer, stdout: anytype, editor: *Editor) !void {
