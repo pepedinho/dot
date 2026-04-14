@@ -238,7 +238,6 @@ pub const Renderer = struct {
 
         var screen_row = view.y;
         const max_rows = view.y + view.height - 1;
-        const clear_to_eol = "\x1b[K";
 
         try ansi.goto(stdout, screen_row, view.x);
 
@@ -260,7 +259,12 @@ pub const Renderer = struct {
 
                 if (c == '\n') {
                     if (current_row > view.row_offset) {
-                        try stdout.writeAll(clear_to_eol);
+                        var pad_col = current_col;
+                        if (pad_col <= view.col_offset) pad_col = view.col_offset + 1;
+
+                        while (pad_col <= view.col_offset + view.width) : (pad_col += 1) {
+                            try stdout.writeAll(" ");
+                        }
                         screen_row += 1;
 
                         const ghosts_drawn = try editor.ghost_manager.renderAtRow(stdout, current_row - 1, @as(u16, @intCast(view.x)), @as(u16, @intCast(screen_row)), @as(u16, @intCast(max_rows)));
@@ -296,13 +300,20 @@ pub const Renderer = struct {
         }
 
         if (screen_row <= max_rows) {
-            try stdout.writeAll(clear_to_eol);
+            var pad_col = current_col;
+            if (pad_col <= view.col_offset) pad_col = view.col_offset + 1;
+
+            while (pad_col <= view.col_offset + view.width) : (pad_col += 1) {
+                try stdout.writeAll(" ");
+            }
             screen_row += 1;
         }
 
         while (screen_row <= max_rows) : (screen_row += 1) {
             try ansi.goto(stdout, screen_row, view.x);
-            try stdout.writeAll(clear_to_eol);
+            for (0..view.width) |_| {
+                try stdout.writeAll(" ");
+            }
         }
 
         view.is_dirty = false;

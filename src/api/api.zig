@@ -106,6 +106,8 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "clear_ghosts", api_clear_ghosts);
     registerFn(L, "set_keymap", api_set_keymap);
     registerFn(L, "save_current_file", api_save_current_file);
+    registerFn(L, "get_native_cmds", api_get_native_cmds);
+    registerFn(L, "set_mode", api_set_mode);
 
     c.lua_setglobal(L, "dot");
 
@@ -723,5 +725,39 @@ export fn api_save_current_file(L: ?*c.lua_State) c_int {
         // TODO: return error message
     };
 
+    return 0;
+}
+
+export fn api_get_native_cmds(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    c.lua_newtable(L);
+
+    var index: c_int = 1;
+    const cmds = editor.cmd_map.map.keys();
+
+    for (cmds) |cmd| {
+        c.lua_pushinteger(L, index);
+        _ = c.lua_pushlstring(L, cmd.ptr, cmd.len);
+        c.lua_settable(L, -3);
+        index += 1;
+    }
+
+    return 1;
+}
+
+export fn api_set_mode(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const mode_str = std.mem.span(c.luaL_checklstring(L, 1, null));
+    if (mode_str.len == 0) return 0;
+    const target_mode: core.Mode = switch (mode_str[0]) {
+        'n' => .Normal,
+        'i' => .Insert,
+        'c' => .Command,
+        'v' => .Search,
+        else => return 0,
+    };
+
+    editor.last_mode = editor.mode;
+    editor.mode = target_mode;
     return 0;
 }

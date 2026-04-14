@@ -10,6 +10,7 @@ M.setup = function(user_plugins)
 				loaded = loaded + 1
 			else
 				dot.print("Error: plugin: [" .. plugin_name .. "] Failed to load")
+				dot.print("err: " .. err)
 			end
 		end
 	end

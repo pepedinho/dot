@@ -131,7 +131,15 @@ function dot.clear_ghosts() end
 ---@param mode string The editor mode targeted 'n' 'i' 'c' ...
 ---@param key string They key triggered callback
 ---@param callback function The callback function which be called by dot
-function set_keymap(mode, key, callback) end
+function dot.set_keymap(mode, key, callback) end
 
 --- Save current buffer into it associated file
-function save_current_file() end
+function dot.save_current_file() end
+
+--- Return list of dot native command
+--- @return table
+function dot.get_native_cmds() end
+
+--- change editor mode to target mode parameter ("n, i, c,...")
+--- @param mode string The editor mode targeted 'n' 'i' 'c' ...
+function dot.set_mode(mode) end

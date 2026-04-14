@@ -362,6 +362,7 @@ pub const Editor = struct {
                 try view.buf.history.recordInsert(view.buf.gap_start, ch);
 
                 try view.buf.insertChar(ch);
+                view.is_dirty = true;
                 self.needs_redraw = false;
             },
             .InsertNewLine => {
@@ -378,6 +379,7 @@ pub const Editor = struct {
 
                 const delete_nl = char_to_delete == '\n';
                 view.buf.backspace();
+                view.is_dirty = true;
                 self.needs_redraw = delete_nl;
             },
             .MoveLeft => {
@@ -723,36 +725,6 @@ pub const Editor = struct {
     /// - update scheduler
     pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
         while (self.is_running) {
-            if (self.is_dirty) {
-                var active = self.getActiveView();
-
-                if (active.scroll()) {
-                    self.needs_redraw = true;
-                }
-                var has_dirty_views = false;
-                for (self.views.items) |v| {
-                    if (v.is_dirty) has_dirty_views = true;
-                }
-
-                if (self.needs_redraw) {
-                    // try ui.refreshScreen(stdout, self);
-                    try self.renderer.refreshScreen(self, stdout);
-                    self.needs_redraw = false;
-                } else {
-                    if (has_dirty_views) {
-                        try self.renderer.refreshDirtyViews(self, stdout);
-                    } else {
-                        try self.renderer.updateCurrentLine(self, stdout);
-                    }
-                }
-                self.is_dirty = false;
-            }
-
-            if (self.renderer.active_animations.items.len > 0)
-                try self.renderer.refreshAnimationsOnly(stdout, self);
-
-            try stdout.flush();
-
             const key = try keyboard.readKey();
             try self.scheduler.update(&self.action_queue);
             while (self.job_manager.popResult()) |result| {
@@ -848,6 +820,35 @@ pub const Editor = struct {
             while (self.action_queue.pop()) |act| {
                 try self.execute(act);
             }
+            if (self.is_dirty) {
+                var active = self.getActiveView();
+
+                if (active.scroll()) {
+                    self.needs_redraw = true;
+                }
+                var has_dirty_views = false;
+                for (self.views.items) |v| {
+                    if (v.is_dirty) has_dirty_views = true;
+                }
+
+                if (self.needs_redraw) {
+                    // try ui.refreshScreen(stdout, self);
+                    try self.renderer.refreshScreen(self, stdout);
+                    self.needs_redraw = false;
+                } else {
+                    if (has_dirty_views) {
+                        try self.renderer.refreshDirtyViews(self, stdout);
+                    } else {
+                        try self.renderer.updateCurrentLine(self, stdout);
+                    }
+                }
+                self.is_dirty = false;
+            }
+
+            if (self.renderer.active_animations.items.len > 0)
+                try self.renderer.refreshAnimationsOnly(stdout, self);
+
+            try stdout.flush();
             self.frame_rendered += 1;
             const now_fps = std.time.milliTimestamp();
             if (now_fps - self.last_fps_time >= 1000) {
@@ -856,7 +857,8 @@ pub const Editor = struct {
                 self.last_fps_time = now_fps;
             }
             try self.win.updateSize();
-            std.Thread.sleep(16_000_000);
+            if (key == .none and self.action_queue.count() == 0)
+                std.Thread.sleep(16_000_000);
         }
     }
 
