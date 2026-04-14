@@ -252,19 +252,23 @@ pub const Renderer = struct {
                 if (need_gutter and current_row > view.row_offset) {
                     try ansi.goto(stdout, screen_row, view.x);
                     try stdout.writeAll("\x1b[90m"); // TODO: make style dynamic & scriptable by lua api
-                    if (current_row < 10) {
-                        try stdout.print("  {d} ", .{current_row});
-                    } else if (current_row < 100) {
-                        try stdout.print(" {d} ", .{current_row});
-                    } else {
-                        try stdout.print("{d} ", .{current_row});
+                    var num_buf: [16]u8 = undefined;
+                    const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{current_row}) catch "err";
+
+                    const required_space = num_str.len + 1;
+
+                    const padding = if (view.gutter_width > required_space)
+                        view.gutter_width - required_space
+                    else
+                        0;
+
+                    for (0..padding) |_| {
+                        try stdout.writeAll(" ");
                     }
-                    if (view.gutter_width - 3 > 0) {
-                        var rest = view.gutter_width - 3;
-                        while (rest > 0) : (rest -= 1) {
-                            try stdout.writeAll(" ");
-                        }
-                    }
+
+                    try stdout.writeAll(num_str);
+                    try stdout.writeAll(" ");
+
                     try stdout.writeAll("\x1b[0m");
                     try ansi.goto(stdout, screen_row, view.x + view.gutter_width);
                     need_gutter = false;
