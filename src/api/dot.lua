@@ -147,3 +147,9 @@ function dot.set_mode(mode) end
 --- Jump to row line
 --- @param row integer The target line
 function dot.jump_to(row) end
+
+--- Split current window horizontaly with the same buffer
+function dot.hsplit() end
+
+--- Split current window verticaly with the same buffer
+function dot.vsplit() end
