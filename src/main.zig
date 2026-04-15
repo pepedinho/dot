@@ -44,6 +44,7 @@ pub fn main() !void {
             const active_buf = dot.getActiveView().buf;
             active_buf.deinit();
             active_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, file_content, filename);
+            _ = dot.triggerHook("BufInit");
         } else |err| {
             if (err != error.FileNotFound) {
                 return err;

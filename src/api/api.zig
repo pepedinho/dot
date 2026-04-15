@@ -113,6 +113,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "hsplit", api_hsplit);
     registerFn(L, "vsplit", api_vsplit);
     registerFn(L, "ts_parse", api_ts_parse);
+    registerFn(L, "ts_load_language", api_ts_load_language);
 
     c.lua_setglobal(L, "dot");
 
@@ -787,6 +788,30 @@ export fn api_vsplit(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
     const buf = editor.getActiveView().buf;
     editor.splitVertical(buf) catch {};
+    return 0;
+}
+
+export fn api_ts_load_language(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const lang_name_ptr = c.luaL_checklstring(L, 1, null);
+    const lib_path_ptr = c.luaL_checklstring(L, 2, null);
+    const query_path_ptr = c.luaL_checklstring(L, 3, null);
+
+    const lang_name = std.mem.span(lang_name_ptr);
+    const lib_path = std.mem.span(lib_path_ptr);
+    const query_path = std.mem.span(query_path_ptr);
+
+    editor.ts_manager.loadLanguage(lang_name, lib_path, query_path) catch |err| {
+        const err_msg = std.fmt.allocPrint(editor.allocator, "TS Load Error: {s}", .{@errorName(err)}) catch return 0;
+        defer editor.allocator.free(err_msg);
+        editor.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+        return 0;
+    };
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+
     return 0;
 }
 

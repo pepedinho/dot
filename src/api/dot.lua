@@ -153,3 +153,12 @@ function dot.hsplit() end
 
 --- Split current window verticaly with the same buffer
 function dot.vsplit() end
+
+--- Return Ast for the current buffer
+function dot.parse() end
+
+--- load language grammar for treesitter
+--- @param name string Name of the file
+--- @param lib string Path to the .so file
+--- @param query string Path to the highlights scm file
+function dot.ts_load_language(name, lib, query) end

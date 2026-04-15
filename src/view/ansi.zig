@@ -9,6 +9,7 @@ pub const Blue = style.Color{ .Index = 4 };
 pub const Magenta = style.Color{ .Index = 5 };
 pub const Cyan = style.Color{ .Index = 6 };
 pub const White = style.Color{ .Index = 7 };
+pub const Default: style.Color = .Default;
 
 pub const Color = struct {
     r: u8,

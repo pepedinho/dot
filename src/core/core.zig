@@ -16,7 +16,7 @@ const job = @import("worker.zig");
 const ansi = @import("../view/ansi.zig");
 
 const c = api.c;
-const TSManager = @import("treesitter.zig").TsManager;
+const TSManager = @import("treesitter.zig").TSManager;
 const PumManager = @import("../view/pum.zig").PumManager;
 const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
@@ -171,7 +171,7 @@ pub const Editor = struct {
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
             .job_manager = JobManager.init(allocator),
             .server_manager = ServerManager.init(allocator),
-            .ts_manager = try TSManager.init(),
+            .ts_manager = try TSManager.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -796,7 +796,10 @@ pub const Editor = struct {
                                 try self.handleKeyPress(ch);
                             },
                             .enter => try self.pushAction(.InsertNewLine),
-                            .backspace => try self.pushAction(.DeleteChar),
+                            .backspace => {
+                                if (!self.triggerHook("BackSpace"))
+                                    try self.pushAction(.DeleteChar);
+                            },
                             .left => try self.pushAction(.MoveLeft),
                             .right => try self.pushAction(.MoveRight),
                             .up => try self.pushAction(.MoveUp),
@@ -850,6 +853,9 @@ pub const Editor = struct {
             }
             if (self.is_dirty) {
                 var active = self.getActiveView();
+
+                self.ts_manager.parse(active.buf);
+                self.ts_manager.highlight(active.buf);
 
                 if (active.scroll()) {
                     self.needs_redraw = true;
@@ -914,7 +920,12 @@ pub const Editor = struct {
         if (!is_prefix) {
             if (self.pending_keys.items.len == 1) {
                 switch (self.mode) {
-                    .Insert => try self.pushAction(.{ .InsertChar = ch }),
+                    .Insert => {
+                        if (ch == ' ') {
+                            _ = !self.triggerHook("SpaceInsert");
+                        }
+                        try self.pushAction(.{ .InsertChar = ch });
+                    },
                     .Command, .Search => try self.pushAction(.{ .CommandChar = ch }),
                     .Normal => {},
                 }

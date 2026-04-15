@@ -1,6 +1,7 @@
 const std = @import("std");
 const gap = @import("gap.zig");
 const api = @import("../api/api.zig");
+const ansi = @import("../view/ansi.zig");
 const c = api.c;
 
 extern fn tree_sitter_zig() callconv(.c) *c.TSLanguage;
@@ -27,23 +28,64 @@ export fn ts_reader(payload: ?*anyopaque, byte_index: u32, position: c.TSPoint, 
     }
 }
 
-pub const TsManager = struct {
+pub const TSManager = struct {
+    allocator: std.mem.Allocator,
     parser: *c.TSParser,
     tree: ?*c.TSTree = null,
+    query: ?*c.TSQuery = null,
+    cursor: *c.TSQueryCursor,
 
-    pub fn init() !TsManager {
+    dyn_lib: ?std.DynLib = null,
+
+    pub fn init(allocator: std.mem.Allocator) !TSManager {
         const parser = c.ts_parser_new() orelse return error.TSInitFailed;
-        _ = c.ts_parser_set_language(parser, tree_sitter_zig());
+        const cursor = c.ts_query_cursor_new() orelse return error.TSCursorFailed;
 
-        return .{ .parser = parser };
+        return .{
+            .allocator = allocator,
+            .parser = parser,
+            .cursor = cursor,
+        };
     }
 
-    pub fn deinit(self: *TsManager) void {
+    pub fn deinit(self: *TSManager) void {
+        c.ts_query_cursor_delete(self.cursor);
+        if (self.query) |q| c.ts_query_delete(q);
         if (self.tree) |tree| c.ts_tree_delete(tree);
         c.ts_parser_delete(self.parser);
+        if (self.dyn_lib) |*lib| lib.close();
     }
 
-    pub fn parse(self: *TsManager, buf: *gap.GapBuffer) void {
+    pub fn loadLanguage(self: *TSManager, lang_name: []const u8, lib_path: []const u8, query_path: []const u8) !void {
+        if (self.dyn_lib) |*lib| lib.close();
+        if (self.query) |q| c.ts_query_delete(q);
+        if (self.tree) |t| c.ts_tree_delete(t);
+        self.tree = null;
+
+        self.dyn_lib = try std.DynLib.open(lib_path);
+
+        const symbol_name = try std.fmt.allocPrintSentinel(self.allocator, "tree_sitter_{s}", .{lang_name}, 0);
+        defer self.allocator.free(symbol_name);
+
+        const ts_lang_fn = self.dyn_lib.?.lookup(*const fn () callconv(.c) *c.TSLanguage, symbol_name) orelse return error.SymbolNotFound;
+        const lang = ts_lang_fn();
+
+        _ = c.ts_parser_set_language(self.parser, lang);
+
+        const query_source = try std.fs.cwd().readFileAlloc(self.allocator, query_path, 1024 * 1024);
+        defer self.allocator.free(query_source);
+
+        var error_offset: u32 = 0;
+        var error_type: c.TSQueryError = undefined;
+        self.query = c.ts_query_new(lang, query_source.ptr, @intCast(query_source.len), &error_offset, &error_type) orelse {
+            const file = std.fs.cwd().createFile("ts_error.log", .{}) catch return error.TSQueryFailed;
+            defer file.close();
+            file.deprecatedWriter().print("ERREUR TREE-SITTER SCM\nOffset : {d}\nType : {d}\n(1=Syntaxe, 2=Noeud Invalide, 3=Champ, 4=Capture)\n", .{ error_offset, error_type }) catch {};
+            return error.TSQueryFailed;
+        };
+    }
+
+    pub fn parse(self: *TSManager, buf: *gap.GapBuffer) void {
         const input = c.TSInput{
             .payload = buf,
             .read = ts_reader,
@@ -55,4 +97,73 @@ pub const TsManager = struct {
         self.tree = c.ts_parser_parse(self.parser, old_tree, input);
         if (old_tree) |t| c.ts_tree_delete(t);
     }
+
+    pub fn highlight(self: *TSManager, buf: *gap.GapBuffer) void {
+        const tree = self.tree orelse return;
+        const query = self.query orelse return;
+
+        const root_node = c.ts_tree_root_node(tree);
+        c.ts_query_cursor_exec(self.cursor, query, root_node);
+
+        var match: c.TSQueryMatch = undefined;
+        var capture_index: u32 = 0;
+
+        buf.extmarks.clearRetainingCapacity();
+
+        while (c.ts_query_cursor_next_capture(self.cursor, &match, &capture_index)) {
+            const capture = match.captures[capture_index];
+            const node = capture.node;
+
+            const start_byte = c.ts_node_start_byte(node);
+            const end_byte = c.ts_node_end_byte(node);
+
+            var length: u32 = 0;
+            const name_ptr = c.ts_query_capture_name_for_id(query, capture.index, &length);
+            const name = name_ptr[0..length];
+
+            // TODO :  make this color mapping scriptable by Lua
+            var color = ansi.Default;
+            var italic = false;
+            var bold = false;
+
+            if (std.mem.eql(u8, name, "keyword")) {
+                color = ansi.Magenta;
+                bold = true;
+            } else if (std.mem.eql(u8, name, "function")) {
+                color = ansi.Blue;
+            } else if (std.mem.eql(u8, name, "builtin")) {
+                color = ansi.Cyan;
+            } else if (std.mem.eql(u8, name, "string")) {
+                color = ansi.Green;
+            } else if (std.mem.eql(u8, name, "number")) {
+                color = ansi.Yellow;
+            } else if (std.mem.eql(u8, name, "type")) {
+                color = ansi.Yellow;
+                italic = true;
+                bold = true;
+            } else if (std.mem.eql(u8, name, "constant")) {
+                color = ansi.Yellow;
+                bold = true;
+            } else if (std.mem.eql(u8, name, "property")) {
+                color = .{ .Index = 117 };
+            } else if (std.mem.eql(u8, name, "operator")) {
+                color = ansi.Red;
+            } else if (std.mem.eql(u8, name, "variable")) {
+                color = ansi.Default;
+            } else if (std.mem.eql(u8, name, "variable.parameter")) {
+                color = ansi.Red;
+                italic = true;
+            } else if (std.mem.eql(u8, name, "comment")) {
+                color = .{ .Index = 242 };
+                italic = true;
+            }
+
+            buf.extmarks.append(buf.allocator, .{
+                .logical_start = start_byte,
+                .logical_end = end_byte,
+                .style = .{ .fg = color, .italic = std.mem.eql(u8, name, "comment") },
+            }) catch {};
+        }
+    }
 };
+
