@@ -109,6 +109,8 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "get_native_cmds", api_get_native_cmds);
     registerFn(L, "set_mode", api_set_mode);
     registerFn(L, "jump_to", api_jump_to);
+    registerFn(L, "hsplit", api_hsplit);
+    registerFn(L, "vsplit", api_vsplit);
 
     c.lua_setglobal(L, "dot");
 
@@ -767,5 +769,21 @@ export fn api_jump_to(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
     const row = c.luaL_checkinteger(L, 1);
     editor.getActiveView().buf.jumpTo(.{ .y = @as(usize, @intCast(row)), .x = 0 });
+    return 0;
+}
+
+export fn api_hsplit(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    const buf = editor.getActiveView().buf;
+    editor.splitHorizontal(buf) catch {};
+    return 0;
+}
+
+export fn api_vsplit(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    const buf = editor.getActiveView().buf;
+    editor.splitVertical(buf) catch {};
     return 0;
 }
