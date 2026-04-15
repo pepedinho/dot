@@ -9,6 +9,7 @@ pub const c = @cImport({
     @cInclude("lua.h");
     @cInclude("lualib.h");
     @cInclude("lauxlib.h");
+    @cInclude("tree_sitter/api.h");
 });
 
 var global_editor: ?*core.Editor = null;
@@ -111,6 +112,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "jump_to", api_jump_to);
     registerFn(L, "hsplit", api_hsplit);
     registerFn(L, "vsplit", api_vsplit);
+    registerFn(L, "ts_parse", api_ts_parse);
 
     c.lua_setglobal(L, "dot");
 
@@ -785,5 +787,23 @@ export fn api_vsplit(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
     const buf = editor.getActiveView().buf;
     editor.splitVertical(buf) catch {};
+    return 0;
+}
+
+export fn api_ts_parse(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+
+    editor.ts_manager.parse(view.buf);
+
+    if (editor.ts_manager.tree) |tree| {
+        const root_node = c.ts_tree_root_node(tree);
+
+        const string_ptr = c.ts_node_string(root_node);
+        defer c.free(string_ptr);
+        const ast_string = std.mem.span(string_ptr);
+        _ = c.lua_pushlstring(L, ast_string.ptr, ast_string.len);
+        return 1;
+    }
     return 0;
 }

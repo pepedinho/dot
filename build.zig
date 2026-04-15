@@ -30,6 +30,20 @@ pub fn build(b: *std.Build) void {
         });
     }
 
+    exe.addIncludePath(b.path("vendor/tree-sitter/lib/include"));
+    exe.addIncludePath(b.path("vendor/tree-sitter/lib/src"));
+
+    exe.addCSourceFile(.{
+        .file = b.path("vendor/tree-sitter/lib/src/lib.c"),
+        .flags = &[_][]const u8{ "-std=gnu11", "-O3" },
+    });
+
+    exe.addIncludePath(b.path("vendor/tree-sitter-zig/src"));
+    exe.addCSourceFile(.{
+        .file = b.path("vendor/tree-sitter-zig/src/parser.c"),
+        .flags = &[_][]const u8{ "-std=gnu11", "-O3" },
+    });
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");

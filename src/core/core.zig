@@ -16,6 +16,7 @@ const job = @import("worker.zig");
 const ansi = @import("../view/ansi.zig");
 
 const c = api.c;
+const TSManager = @import("treesitter.zig").TsManager;
 const PumManager = @import("../view/pum.zig").PumManager;
 const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
@@ -137,6 +138,10 @@ pub const Editor = struct {
     hooks: std.StringHashMap(std.ArrayList(c_int)),
     job_manager: JobManager,
     server_manager: ServerManager,
+    // =======================
+    // TREE SITTER
+    // =======================
+    ts_manager: TSManager,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var binds = std.EnumArray(Mode, std.StringHashMap(Action)).initUndefined();
@@ -166,6 +171,7 @@ pub const Editor = struct {
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
             .job_manager = JobManager.init(allocator),
             .server_manager = ServerManager.init(allocator),
+            .ts_manager = try TSManager.init(),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -259,6 +265,7 @@ pub const Editor = struct {
         self.pum.deinit();
         self.job_manager.deinit();
         self.server_manager.deinit();
+        self.ts_manager.deinit();
         if (self.clipboard) |cl| self.allocator.free(cl);
     }
 
