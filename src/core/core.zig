@@ -854,15 +854,18 @@ pub const Editor = struct {
             if (self.is_dirty) {
                 var active = self.getActiveView();
 
-                self.ts_manager.parse(active.buf);
-                self.ts_manager.highlight(active.buf);
-
                 if (active.scroll()) {
                     self.needs_redraw = true;
                 }
                 var has_dirty_views = false;
                 for (self.views.items) |v| {
                     if (v.is_dirty) has_dirty_views = true;
+                }
+
+                if (active.buf.is_dirty or self.needs_redraw) {
+                    self.ts_manager.parse(active.buf);
+                    self.ts_manager.highlight(active.buf);
+                    active.buf.is_dirty = false;
                 }
 
                 if (self.needs_redraw) {

@@ -26,9 +26,9 @@ local function update_tree()
 	return false
 end
 
-dot.hook_on("SpaceInsert", update_tree)
+-- dot.hook_on("SpaceInsert", update_tree)
 dot.hook_on("BufInit", update_tree)
-dot.hook_on("ModeChanged", update_tree)
-dot.hook_on("BackSpace", update_tree)
+-- dot.hook_on("ModeChanged", update_tree)
+-- dot.hook_on("BackSpace", update_tree)
 
 return M

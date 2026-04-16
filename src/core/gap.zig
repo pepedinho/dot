@@ -27,6 +27,7 @@ pub const GapBuffer = struct {
     filename: ?[]const u8,
     /// This field is used by R-engine to colorize text frames
     extmarks: std.ArrayList(ExMark),
+    is_dirty: bool = true,
 
     history: HistoryManager,
 
@@ -187,6 +188,7 @@ pub const GapBuffer = struct {
 
         self.buffer[self.gap_start] = char;
         self.gap_start += 1;
+        self.is_dirty = true;
     }
 
     /// Removes the character immediately preceding the cursor in O(1) time.
@@ -195,6 +197,7 @@ pub const GapBuffer = struct {
         if (self.gap_start > 0) {
             self.gap_start -= 1;
         }
+        self.is_dirty = true;
     }
 
     pub fn printDebug(self: *GapBuffer) void {
