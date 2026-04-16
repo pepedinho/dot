@@ -3,6 +3,7 @@ const utils = @import("../utils.zig");
 const style = @import("../view/style.zig");
 const ansi = @import("../view/ansi.zig");
 const HistoryManager = @import("history.zig").HistoryManager;
+const api = @import("../api/api.zig");
 
 const TAB_SIZE: usize = 4;
 
@@ -28,6 +29,7 @@ pub const GapBuffer = struct {
     /// This field is used by R-engine to colorize text frames
     extmarks: std.ArrayList(ExMark),
     is_dirty: bool = true,
+    ts_tree: ?*anyopaque = null,
 
     history: HistoryManager,
 
@@ -119,6 +121,7 @@ pub const GapBuffer = struct {
         self.extmarks.deinit(self.allocator);
         self.history.deinit();
         self.allocator.free(self.buffer);
+        if (self.ts_tree) |tree| api.c.ts_tree_delete(@as(?*api.c.TSTree, @ptrCast(@alignCast(tree))));
     }
 
     /// Moves the cursor (and the gap) one character to the left.

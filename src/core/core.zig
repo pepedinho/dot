@@ -373,7 +373,7 @@ pub const Editor = struct {
                 try view.buf.insertChar(ch);
 
                 const end_pos = view.buf.getCursorPos();
-                self.ts_manager.edit(start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
+                self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                 for (self.views.items) |*v| {
                     if (v.buf == view.buf) {
                         v.is_dirty = true;
@@ -390,7 +390,7 @@ pub const Editor = struct {
                 try view.buf.insertChar('\n');
 
                 const end_pos = view.buf.getCursorPos();
-                self.ts_manager.edit(start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
+                self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                 self.needs_redraw = true;
             },
             .DeleteChar => {
@@ -407,7 +407,7 @@ pub const Editor = struct {
                 view.buf.backspace();
 
                 const new_pos = view.buf.getCursorPos();
-                self.ts_manager.edit(start_byte, old_end_byte, start_byte, new_pos.y, new_pos.x, old_pos.y, old_pos.x, new_pos.y, new_pos.x);
+                self.ts_manager.edit(view.buf, start_byte, old_end_byte, start_byte, new_pos.y, new_pos.x, old_pos.y, old_pos.x, new_pos.y, new_pos.x);
 
                 for (self.views.items) |*v| {
                     if (v.buf == view.buf) {
@@ -463,7 +463,7 @@ pub const Editor = struct {
                     }
 
                     const end_pos = view.buf.getCursorPos();
-                    self.ts_manager.edit(start_byte, start_byte, start_byte + @as(u32, @intCast(clip.len)), start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
+                    self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + @as(u32, @intCast(clip.len)), start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                     try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
 
                     try self.toast_manager.push("Pasted", 1500, .{ .fg = ansi.Green, .bg = ansi.Black, .bold = true });
@@ -885,14 +885,21 @@ pub const Editor = struct {
                 }
                 var has_dirty_views = false;
                 for (self.views.items) |v| {
+                    if (v.buf.is_dirty or self.needs_redraw) {
+                        self.ts_manager.parse(v.buf);
+                        const start_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(v.row_offset + 1, 1)));
+                        const end_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(v.row_offset + v.height + 2, 1)));
+                        self.ts_manager.highlight(v.buf, start_byte, end_byte);
+                        v.buf.is_dirty = false;
+                    }
                     if (v.is_dirty) has_dirty_views = true;
                 }
 
-                self.ts_manager.parse(active.buf);
-                const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
-                const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
-                self.ts_manager.highlight(active.buf, start_byte, end_byte);
-                active.buf.is_dirty = false;
+                // self.ts_manager.parse(active.buf);
+                // const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
+                // const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
+                // self.ts_manager.highlight(active.buf, start_byte, end_byte);
+                // active.buf.is_dirty = false;
 
                 if (self.needs_redraw) {
                     // try ui.refreshScreen(stdout, self);

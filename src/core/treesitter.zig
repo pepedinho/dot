@@ -31,7 +31,6 @@ export fn ts_reader(payload: ?*anyopaque, byte_index: u32, position: c.TSPoint, 
 pub const TSManager = struct {
     allocator: std.mem.Allocator,
     parser: *c.TSParser,
-    tree: ?*c.TSTree = null,
     query: ?*c.TSQuery = null,
     cursor: *c.TSQueryCursor,
 
@@ -51,16 +50,15 @@ pub const TSManager = struct {
     pub fn deinit(self: *TSManager) void {
         c.ts_query_cursor_delete(self.cursor);
         if (self.query) |q| c.ts_query_delete(q);
-        if (self.tree) |tree| c.ts_tree_delete(tree);
         c.ts_parser_delete(self.parser);
         if (self.dyn_lib) |*lib| lib.close();
     }
 
-    pub fn loadLanguage(self: *TSManager, lang_name: []const u8, lib_path: []const u8, query_path: []const u8) !void {
+    pub fn loadLanguage(self: *TSManager, buf: *gap.GapBuffer, lang_name: []const u8, lib_path: []const u8, query_path: []const u8) !void {
         if (self.dyn_lib) |*lib| lib.close();
         if (self.query) |q| c.ts_query_delete(q);
-        if (self.tree) |t| c.ts_tree_delete(t);
-        self.tree = null;
+        if (buf.ts_tree) |t| c.ts_tree_delete(@as(?*c.TSTree, @ptrCast(@alignCast(t))));
+        buf.ts_tree = null;
 
         self.dyn_lib = try std.DynLib.open(lib_path);
 
@@ -87,6 +85,7 @@ pub const TSManager = struct {
 
     pub fn edit(
         self: *TSManager,
+        buf: *gap.GapBuffer,
         start_byte: u32,
         old_end_byte: u32,
         new_end_byte: u32,
@@ -97,7 +96,8 @@ pub const TSManager = struct {
         new_y: usize,
         new_x: usize,
     ) void {
-        if (self.tree) |tree| {
+        _ = self;
+        if (buf.ts_tree) |tree| {
             const ts_edit = c.TSInputEdit{
                 .start_byte = start_byte,
                 .old_end_byte = old_end_byte,
@@ -106,7 +106,7 @@ pub const TSManager = struct {
                 .old_end_point = .{ .row = @intCast(old_y - 1), .column = @intCast(old_x - 1) },
                 .new_end_point = .{ .row = @intCast(new_y - 1), .column = @intCast(new_x - 1) },
             };
-            c.ts_tree_edit(tree, &ts_edit);
+            c.ts_tree_edit(@as(?*c.TSTree, @ptrCast(@alignCast(tree))), &ts_edit);
         }
     }
 
@@ -116,15 +116,16 @@ pub const TSManager = struct {
             .read = ts_reader,
             .encoding = c.TSInputEncodingUTF8,
         };
+        const old_tree = @as(?*c.TSTree, @ptrCast(@alignCast(buf.ts_tree)));
+        const new_tree = c.ts_parser_parse(self.parser, old_tree, input);
 
-        const old_tree = self.tree;
-        self.tree = c.ts_parser_parse(self.parser, old_tree, input);
+        buf.ts_tree = new_tree;
 
         if (old_tree) |t| c.ts_tree_delete(t);
     }
 
     pub fn highlight(self: *TSManager, buf: *gap.GapBuffer, start_byte: u32, end_byte: u32) void {
-        const tree = self.tree orelse return;
+        const tree = @as(?*c.TSTree, @ptrCast(@alignCast(buf.ts_tree))) orelse return;
         const query = self.query orelse return;
 
         const root_node = c.ts_tree_root_node(tree);
@@ -157,6 +158,9 @@ pub const TSManager = struct {
                 bold = true;
             } else if (std.mem.eql(u8, name, "function")) {
                 color = ansi.Blue;
+            } else if (std.mem.eql(u8, name, "type.qualifier")) {
+                color = ansi.Magenta;
+                color = .{ .Rgb = .{ .r = 153, .g = 153, .b = 255 } };
             } else if (std.mem.eql(u8, name, "builtin")) {
                 color = ansi.Cyan;
             } else if (std.mem.eql(u8, name, "string")) {

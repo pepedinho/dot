@@ -322,6 +322,7 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
     const ts_new_end_byte = @as(u32, @intCast(buf.gap_start));
 
     editor.ts_manager.edit(
+        buf,
         ts_start_byte,
         ts_old_end_byte,
         ts_new_end_byte,
@@ -816,6 +817,7 @@ export fn api_vsplit(L: ?*c.lua_State) c_int {
 
 export fn api_ts_load_language(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
 
     const lang_name_ptr = c.luaL_checklstring(L, 1, null);
     const lib_path_ptr = c.luaL_checklstring(L, 2, null);
@@ -825,7 +827,7 @@ export fn api_ts_load_language(L: ?*c.lua_State) c_int {
     const lib_path = std.mem.span(lib_path_ptr);
     const query_path = std.mem.span(query_path_ptr);
 
-    editor.ts_manager.loadLanguage(lang_name, lib_path, query_path) catch |err| {
+    editor.ts_manager.loadLanguage(view.buf, lang_name, lib_path, query_path) catch |err| {
         const err_msg = std.fmt.allocPrint(editor.allocator, "TS Load Error: {s}", .{@errorName(err)}) catch return 0;
         defer editor.allocator.free(err_msg);
         editor.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
@@ -844,8 +846,8 @@ export fn api_ts_parse(L: ?*c.lua_State) c_int {
 
     editor.ts_manager.parse(view.buf);
 
-    if (editor.ts_manager.tree) |tree| {
-        const root_node = c.ts_tree_root_node(tree);
+    if (view.buf.ts_tree) |tree| {
+        const root_node = c.ts_tree_root_node(@as(?*c.TSTree, @ptrCast(@alignCast(tree))));
 
         const string_ptr = c.ts_node_string(root_node);
         defer c.free(string_ptr);

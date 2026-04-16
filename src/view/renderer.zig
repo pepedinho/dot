@@ -314,7 +314,7 @@ pub const Renderer = struct {
                             }
 
                             if (!std.meta.eql(current_ansi_style, target_style)) {
-                                try stdout.writeAll("\x1b[m"); // Reset d'abord pour éviter de mélanger gras/italique
+                                try stdout.writeAll("\x1b[m");
                                 if (target_style) |s| {
                                     try s.toAnsi(stdout);
                                 }
