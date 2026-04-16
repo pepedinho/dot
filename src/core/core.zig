@@ -367,7 +367,13 @@ pub const Editor = struct {
 
                 try view.buf.history.recordInsert(view.buf.gap_start, ch);
 
+                const start_pos = view.buf.getCursorPos();
+                const start_byte = @as(u32, @intCast(view.buf.gap_start));
+
                 try view.buf.insertChar(ch);
+
+                const end_pos = view.buf.getCursorPos();
+                self.ts_manager.edit(start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                 for (self.views.items) |*v| {
                     if (v.buf == view.buf) {
                         v.is_dirty = true;
@@ -378,7 +384,13 @@ pub const Editor = struct {
             .InsertNewLine => {
                 if (view.is_readonly) return;
                 try view.buf.history.recordInsert(view.buf.gap_start, '\n');
+                const start_pos = view.buf.getCursorPos();
+                const start_byte = @as(u32, @intCast(view.buf.gap_start));
+
                 try view.buf.insertChar('\n');
+
+                const end_pos = view.buf.getCursorPos();
+                self.ts_manager.edit(start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                 self.needs_redraw = true;
             },
             .DeleteChar => {
@@ -387,8 +399,16 @@ pub const Editor = struct {
                 const char_to_delete = view.buf.buffer[view.buf.gap_start - 1];
                 try view.buf.history.recordDelete(view.buf.gap_start - 1, char_to_delete);
 
+                const old_pos = view.buf.getCursorPos();
+                const old_end_byte = @as(u32, @intCast(view.buf.gap_start));
+                const start_byte = old_end_byte - 1;
+
                 const delete_nl = char_to_delete == '\n';
                 view.buf.backspace();
+
+                const new_pos = view.buf.getCursorPos();
+                self.ts_manager.edit(start_byte, old_end_byte, start_byte, new_pos.y, new_pos.x, old_pos.y, old_pos.x, new_pos.y, new_pos.x);
+
                 for (self.views.items) |*v| {
                     if (v.buf == view.buf) {
                         v.is_dirty = true;
@@ -436,10 +456,16 @@ pub const Editor = struct {
             .Paste => {
                 if (view.is_readonly) return;
                 if (self.clipboard) |clip| {
+                    const start_pos = view.buf.getCursorPos();
+                    const start_byte = @as(u32, @intCast(view.buf.gap_start));
                     for (clip) |cl| {
                         try view.buf.insertChar(cl);
                     }
+
+                    const end_pos = view.buf.getCursorPos();
+                    self.ts_manager.edit(start_byte, start_byte, start_byte + @as(u32, @intCast(clip.len)), start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                     try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
+
                     try self.toast_manager.push("Pasted", 1500, .{ .fg = ansi.Green, .bg = ansi.Black, .bold = true });
                     self.needs_redraw = true;
                 } else {
@@ -862,11 +888,11 @@ pub const Editor = struct {
                     if (v.is_dirty) has_dirty_views = true;
                 }
 
-                if (active.buf.is_dirty or self.needs_redraw) {
-                    self.ts_manager.parse(active.buf);
-                    self.ts_manager.highlight(active.buf);
-                    active.buf.is_dirty = false;
-                }
+                self.ts_manager.parse(active.buf);
+                const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
+                const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
+                self.ts_manager.highlight(active.buf, start_byte, end_byte);
+                active.buf.is_dirty = false;
 
                 if (self.needs_redraw) {
                     // try ui.refreshScreen(stdout, self);
@@ -875,9 +901,9 @@ pub const Editor = struct {
                 } else {
                     if (has_dirty_views) {
                         try self.renderer.refreshDirtyViews(self, stdout);
-                    } else if (active.buf.is_dirty) {
+                    } else {
                         try self.renderer.updateCurrentLine(self, stdout);
-                    } else {}
+                    }
                 }
                 self.is_dirty = false;
             }

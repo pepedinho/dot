@@ -85,6 +85,31 @@ pub const TSManager = struct {
         };
     }
 
+    pub fn edit(
+        self: *TSManager,
+        start_byte: u32,
+        old_end_byte: u32,
+        new_end_byte: u32,
+        start_y: usize,
+        start_x: usize,
+        old_y: usize,
+        old_x: usize,
+        new_y: usize,
+        new_x: usize,
+    ) void {
+        if (self.tree) |tree| {
+            const ts_edit = c.TSInputEdit{
+                .start_byte = start_byte,
+                .old_end_byte = old_end_byte,
+                .new_end_byte = new_end_byte,
+                .start_point = .{ .row = @intCast(start_y - 1), .column = @intCast(start_x - 1) },
+                .old_end_point = .{ .row = @intCast(old_y - 1), .column = @intCast(old_x - 1) },
+                .new_end_point = .{ .row = @intCast(new_y - 1), .column = @intCast(new_x - 1) },
+            };
+            c.ts_tree_edit(tree, &ts_edit);
+        }
+    }
+
     pub fn parse(self: *TSManager, buf: *gap.GapBuffer) void {
         const input = c.TSInput{
             .payload = buf,
@@ -92,16 +117,18 @@ pub const TSManager = struct {
             .encoding = c.TSInputEncodingUTF8,
         };
 
-        if (self.tree) |t| c.ts_tree_delete(t);
+        const old_tree = self.tree;
+        self.tree = c.ts_parser_parse(self.parser, old_tree, input);
 
-        self.tree = c.ts_parser_parse(self.parser, null, input);
+        if (old_tree) |t| c.ts_tree_delete(t);
     }
 
-    pub fn highlight(self: *TSManager, buf: *gap.GapBuffer) void {
+    pub fn highlight(self: *TSManager, buf: *gap.GapBuffer, start_byte: u32, end_byte: u32) void {
         const tree = self.tree orelse return;
         const query = self.query orelse return;
 
         const root_node = c.ts_tree_root_node(tree);
+        _ = c.ts_query_cursor_set_byte_range(self.cursor, start_byte, end_byte);
         c.ts_query_cursor_exec(self.cursor, query, root_node);
 
         var match: c.TSQueryMatch = undefined;
@@ -113,8 +140,8 @@ pub const TSManager = struct {
             const capture = match.captures[capture_index];
             const node = capture.node;
 
-            const start_byte = c.ts_node_start_byte(node);
-            const end_byte = c.ts_node_end_byte(node);
+            const s_byte = c.ts_node_start_byte(node);
+            const e_byte = c.ts_node_end_byte(node);
 
             var length: u32 = 0;
             const name_ptr = c.ts_query_capture_name_for_id(query, capture.index, &length);
@@ -158,8 +185,8 @@ pub const TSManager = struct {
             }
 
             buf.extmarks.append(buf.allocator, .{
-                .logical_start = start_byte,
-                .logical_end = end_byte,
+                .logical_start = s_byte,
+                .logical_end = e_byte,
                 .style = .{ .fg = color, .italic = std.mem.eql(u8, name, "comment") },
             }) catch {};
         }

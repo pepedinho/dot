@@ -278,7 +278,14 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
 
     buf.history.commit() catch {};
 
+    buf.jumpToLogical(s_idx);
+    const ts_start_pos = buf.getCursorPos();
+    const ts_start_byte = @as(u32, @intCast(s_idx));
+
     buf.jumpToLogical(e_idx);
+    const ts_old_end_pos = buf.getCursorPos();
+    const ts_old_end_byte = @as(u32, @intCast(e_idx));
+
     var del_count = e_idx - s_idx;
     while (del_count > 0) : (del_count -= 1) {
         const char_to_del = buf.charAt(buf.gap_start - 1).?;
@@ -311,6 +318,22 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
         c.lua_pop(L, 1);
     }
 
+    const ts_new_end_pos = buf.getCursorPos();
+    const ts_new_end_byte = @as(u32, @intCast(buf.gap_start));
+
+    editor.ts_manager.edit(
+        ts_start_byte,
+        ts_old_end_byte,
+        ts_new_end_byte,
+        ts_start_pos.y,
+        ts_start_pos.x,
+        ts_old_end_pos.y,
+        ts_old_end_pos.x,
+        ts_new_end_pos.y,
+        ts_new_end_pos.x,
+    );
+
+    buf.is_dirty = true;
     buf.history.commit() catch {};
     editor.needs_redraw = true;
     editor.is_dirty = true;
