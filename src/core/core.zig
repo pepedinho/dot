@@ -875,9 +875,9 @@ pub const Editor = struct {
                 } else {
                     if (has_dirty_views) {
                         try self.renderer.refreshDirtyViews(self, stdout);
-                    } else {
+                    } else if (active.buf.is_dirty) {
                         try self.renderer.updateCurrentLine(self, stdout);
-                    }
+                    } else {}
                 }
                 self.is_dirty = false;
             }

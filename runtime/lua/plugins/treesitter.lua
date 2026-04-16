@@ -1,12 +1,21 @@
 local M = {}
 
-local languages = {
-	zig = {
-		name = "zig",
-		lib = os.getenv("PWD") .. "/parsers/zig.so",
-		query = os.getenv("HOME") .. "/.config/dot/queries/zig/highlights.scm",
-	},
+local ext_to_lang = {
+	zig = "zig",
+	lua = "lua",
+	c = "c",
+	h = "c",
+	rs = "rust",
+	py = "python",
+	js = "javascript",
+	ts = "typescript",
 }
+
+local home = os.getenv("HOME")
+local parsers_dir = home .. "/.config/dot/parsers/"
+local queries_dir = home .. "/.config/dot/queries/"
+
+local current_loaded_lang = nil
 
 local function update_tree()
 	local filename = dot.get_file()
@@ -15,20 +24,39 @@ local function update_tree()
 	end
 
 	local ext = filename:match("^.+(%..+)$")
-	if ext then
-		ext = ext:sub(2)
-		local lang = languages[ext]
-
-		if lang then
-			dot.ts_load_language(lang.name, lang.lib, lang.query)
-		end
+	if not ext then
+		return false
 	end
+	ext = ext:sub(2)
+
+	local lang_name = ext_to_lang[ext]
+	if not lang_name then
+		return false
+	end
+
+	if current_loaded_lang == lang_name then
+		return false
+	end
+
+	local lib_path = parsers_dir .. lang_name .. ".so"
+	local query_path = queries_dir .. lang_name .. "/highlights.scm"
+
+	local f = io.open(lib_path, "r")
+	if f then
+		f:close()
+		dot.print("🌳 Tree-sitter loaded : " .. lang_name)
+		dot.ts_load_language(lang_name, lib_path, query_path)
+		current_loaded_lang = lang_name
+	else
+		dot.print("lang not found: use lang-install <lang>")
+	end
+
 	return false
 end
 
--- dot.hook_on("SpaceInsert", update_tree)
 dot.hook_on("BufInit", update_tree)
--- dot.hook_on("ModeChanged", update_tree)
--- dot.hook_on("BackSpace", update_tree)
+dot.hook_on("BufOpen", update_tree)
+local cmd = require("dot.commands")
+cmd.create("ts", update_tree)
 
 return M

@@ -92,10 +92,9 @@ pub const TSManager = struct {
             .encoding = c.TSInputEncodingUTF8,
         };
 
-        const old_tree = self.tree;
+        if (self.tree) |t| c.ts_tree_delete(t);
 
-        self.tree = c.ts_parser_parse(self.parser, old_tree, input);
-        if (old_tree) |t| c.ts_tree_delete(t);
+        self.tree = c.ts_parser_parse(self.parser, null, input);
     }
 
     pub fn highlight(self: *TSManager, buf: *gap.GapBuffer) void {
@@ -166,4 +165,3 @@ pub const TSManager = struct {
         }
     }
 };
-
