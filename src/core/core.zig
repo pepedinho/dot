@@ -974,7 +974,7 @@ pub const Editor = struct {
                 switch (self.mode) {
                     .Insert => {
                         if (ch == ' ') {
-                            _ = !self.triggerHook("SpaceInsert");
+                            _ = self.triggerHook("SpaceInsert");
                         }
                         try self.pushAction(.{ .InsertChar = ch });
                     },

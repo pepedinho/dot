@@ -196,7 +196,7 @@ pub const TSManager = struct {
             buf.extmarks.append(buf.allocator, .{
                 .logical_start = s_byte,
                 .logical_end = e_byte,
-                .style = .{ .fg = color, .italic = std.mem.eql(u8, name, "comment") },
+                .style = .{ .fg = color, .italic = italic, .bold = bold },
             }) catch {};
         }
     }

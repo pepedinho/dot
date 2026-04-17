@@ -155,7 +155,7 @@ function dot.hsplit() end
 function dot.vsplit() end
 
 --- Return Ast for the current buffer
-function dot.parse() end
+function dot.ts_parse() end
 
 --- load language grammar for treesitter
 --- @param name string Name of the file
