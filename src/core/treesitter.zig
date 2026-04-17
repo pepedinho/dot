@@ -58,6 +58,10 @@ pub const TSManager = struct {
     pub fn loadLanguage(self: *TSManager, buf: *gap.GapBuffer, lang_name: []const u8, lib_path: []const u8, query_path: []const u8) !void {
         if (self.dyn_lib) |*lib| lib.close();
         if (self.query) |q| c.ts_query_delete(q);
+        errdefer {
+            self.dyn_lib = null;
+            self.query = null;
+        }
         if (buf.ts_tree) |t| c.ts_tree_delete(@as(?*c.TSTree, @ptrCast(@alignCast(t))));
         buf.ts_tree = null;
 
