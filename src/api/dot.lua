@@ -82,14 +82,15 @@ function dot.show_pum(x, y, items, selected_index) end
 function dot.hide_pum() end
 
 ---Applies a visual style to a portion of text.
+---@param id integer The style namespace
 ---@param row integer The line (1-indexed)
 ---@param col integer The starting column (1-indexed)
 ---@param length integer The number of characters to color
 ---@param style DotStyle Style definition
-function dot.add_style(row, col, length, style) end
+function dot.add_style(id, row, col, length, style) end
 
----Cleans all stains from the active buffer.
-function dot.clear_style() end
+---Cleans all style from the active buffer with the provided id.
+function dot.clear_style(id) end
 
 ---Executes a system command in the background without blocking the editor.
 ---@param cmd string The command to execute (e.g., "grep -r TODO .")

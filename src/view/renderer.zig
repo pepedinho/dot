@@ -306,10 +306,17 @@ pub const Renderer = struct {
                     if (current_row > view.row_offset) {
                         if (current_col > view.col_offset and current_col <= view.col_offset + text_width) {
                             var target_style: ?style.Style = null;
-                            for (view.buf.extmarks.items) |mark| {
+                            var current_priority: i32 = -1;
+                            var i: usize = view.buf.extmarks.items.len;
+                            while (i > 0) {
+                                i -= 1;
+                                const mark = view.buf.extmarks.items[i];
+
                                 if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
-                                    target_style = mark.style;
-                                    break;
+                                    if (@as(i32, mark.priority) >= current_priority) {
+                                        target_style = mark.style;
+                                        current_priority = mark.priority;
+                                    }
                                 }
                             }
 

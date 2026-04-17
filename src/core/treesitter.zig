@@ -140,7 +140,7 @@ pub const TSManager = struct {
         var match: c.TSQueryMatch = undefined;
         var capture_index: u32 = 0;
 
-        buf.extmarks.clearRetainingCapacity();
+        buf.clearMarksByNamespace(gap.NS_TREESITTER);
 
         while (c.ts_query_cursor_next_capture(self.cursor, &match, &capture_index)) {
             const capture = match.captures[capture_index];
@@ -197,6 +197,8 @@ pub const TSManager = struct {
                 .logical_start = s_byte,
                 .logical_end = e_byte,
                 .style = .{ .fg = color, .italic = italic, .bold = bold },
+                .ns_id = gap.NS_TREESITTER,
+                .priority = 0,
             }) catch {};
         }
     }

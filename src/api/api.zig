@@ -500,16 +500,20 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
     const view = editor.getActiveView();
 
-    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
-    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
-    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+    const ns_id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
 
-    c.luaL_checktype(L, 4, c.LUA_TTABLE);
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
+    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 4)));
+
+    c.luaL_checktype(L, 5, c.LUA_TTABLE);
+
+    const priority = @as(u8, @intCast(c.luaL_optinteger(L, 6, 50)));
 
     var hl_style = style.Style{};
 
-    if (c.lua_istable(L, 4)) {
-        c.lua_pushvalue(L, 4);
+    if (c.lua_istable(L, 5)) {
+        c.lua_pushvalue(L, 5);
 
         hl_style.fg = parseLuaColor(L, "fg");
         hl_style.bg = parseLuaColor(L, "bg");
@@ -536,6 +540,8 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
         .logical_start = start_idx,
         .logical_end = end_idx,
         .style = hl_style,
+        .ns_id = ns_id,
+        .priority = priority,
     }) catch {};
 
     editor.needs_redraw = true;
@@ -545,8 +551,11 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
 
 export fn api_clear_style(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
-    _ = L;
-    editor.getActiveView().buf.extmarks.clearRetainingCapacity();
+
+    const ns_id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+
+    editor.getActiveView().buf.clearMarksByNamespace(ns_id);
+
     editor.needs_redraw = true;
     editor.is_dirty = true;
     return 0;
