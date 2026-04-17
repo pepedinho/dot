@@ -240,6 +240,8 @@ pub const Renderer = struct {
 
         const text_width = view.width - view.gutter_width;
         var need_gutter = true;
+        var current_ansi_style: ?style.Style = null;
+        defer if (current_ansi_style != null) stdout.writeAll("\x1b[m") catch {};
 
         const parts = [_][]const u8{ part1, part2 };
         for (parts, 0..) |part, p_idx| {
@@ -253,17 +255,22 @@ pub const Renderer = struct {
 
                 const logical_idx = if (p_idx == 0) c_idx else view.buf.gap_start + c_idx;
 
-                var active_style: ?style.Style = null;
-                for (view.buf.extmarks.items) |mark| {
-                    if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
-                        active_style = mark.style;
-                        break;
-                    }
-                }
+                // var active_style: ?style.Style = null;
+                // for (view.buf.extmarks.items) |mark| {
+                //     if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
+                //         active_style = mark.style;
+                //         break;
+                //     }
+                // }
 
                 if (c == '\n') {
                     if (current_row > view.row_offset) {
                         var pad_col = current_col;
+                        if (current_ansi_style != null) {
+                            try stdout.writeAll("\x1b[m");
+                            current_ansi_style = null;
+                        }
+
                         if (pad_col <= view.col_offset) pad_col = view.col_offset + 1;
 
                         while (pad_col <= view.col_offset + text_width) : (pad_col += 1) {
@@ -283,6 +290,10 @@ pub const Renderer = struct {
                     current_row += 1;
                     current_col = 1;
                 } else if (c == '\t') {
+                    if (current_ansi_style != null) {
+                        try stdout.writeAll("\x1b[m");
+                        current_ansi_style = null;
+                    }
                     for (0..TAB_SIZE) |_| {
                         if (current_row > view.row_offset) {
                             if (current_col > view.col_offset and current_col <= view.col_offset + text_width) {
@@ -294,9 +305,30 @@ pub const Renderer = struct {
                 } else {
                     if (current_row > view.row_offset) {
                         if (current_col > view.col_offset and current_col <= view.col_offset + text_width) {
-                            if (active_style) |s| try s.toAnsi(stdout);
+                            var target_style: ?style.Style = null;
+                            var current_priority: i32 = -1;
+                            var i: usize = view.buf.extmarks.items.len;
+                            while (i > 0) {
+                                i -= 1;
+                                const mark = view.buf.extmarks.items[i];
+
+                                if (logical_idx >= mark.logical_start and logical_idx < mark.logical_end) {
+                                    if (@as(i32, mark.priority) >= current_priority) {
+                                        target_style = mark.style;
+                                        current_priority = mark.priority;
+                                    }
+                                }
+                            }
+
+                            if (!std.meta.eql(current_ansi_style, target_style)) {
+                                try stdout.writeAll("\x1b[m");
+                                if (target_style) |s| {
+                                    try s.toAnsi(stdout);
+                                }
+                                current_ansi_style = target_style;
+                            }
+
                             try stdout.writeAll(&[_]u8{c});
-                            if (active_style != null) try stdout.writeAll("\x1b[m");
                         }
                     }
                     current_col += 1;
@@ -308,6 +340,11 @@ pub const Renderer = struct {
             if (need_gutter and current_row > view.row_offset) {
                 try self.drawGutter(stdout, view, current_row, screen_row);
                 need_gutter = false;
+            }
+
+            if (current_ansi_style != null) {
+                try stdout.writeAll("\x1b[m");
+                current_ansi_style = null;
             }
 
             var pad_col = current_col;
@@ -346,7 +383,20 @@ pub const Renderer = struct {
         } else try stdout.writeAll("\x1b[90m");
 
         var num_buf: [16]u8 = undefined;
-        const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{row}) catch "err";
+        var idx: usize = 16;
+        var temp_row = row;
+
+        if (temp_row == 0) {
+            idx -= 1;
+            num_buf[idx] = '0';
+        } else {
+            while (temp_row > 0) {
+                idx -= 1;
+                num_buf[idx] = @as(u8, @intCast(temp_row % 10)) + '0';
+                temp_row /= 10;
+            }
+        }
+        const num_str = num_buf[idx..16];
         const required_space = num_str.len + 1;
         const padding = if (view.gutter_width > required_space)
             view.gutter_width - required_space

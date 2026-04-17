@@ -110,6 +110,7 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
                 view.col_offset = 0;
                 view.row_offset = 0;
                 ed.needs_redraw = true;
+                _ = ed.triggerHook("BufOpen");
                 return;
             }
         }
@@ -124,6 +125,7 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
     view.col_offset = 0;
     view.row_offset = 0;
 
+    _ = ed.triggerHook("BufOpen");
     ed.needs_redraw = true;
 }
 

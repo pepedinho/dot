@@ -3,13 +3,19 @@ const utils = @import("../utils.zig");
 const style = @import("../view/style.zig");
 const ansi = @import("../view/ansi.zig");
 const HistoryManager = @import("history.zig").HistoryManager;
+const api = @import("../api/api.zig");
 
 const TAB_SIZE: usize = 4;
+pub const NS_TREESITTER: u32 = 1;
+pub const NS_SEARCH: u32 = 2;
+pub const NS_LSP: u32 = 3;
 
 pub const ExMark = struct {
     logical_start: usize,
     logical_end: usize,
     style: style.Style,
+    ns_id: u32,
+    priority: u8,
 };
 
 /// Gap buffer implementation
@@ -27,6 +33,8 @@ pub const GapBuffer = struct {
     filename: ?[]const u8,
     /// This field is used by R-engine to colorize text frames
     extmarks: std.ArrayList(ExMark),
+    is_dirty: bool = true,
+    ts_tree: ?*anyopaque = null,
 
     history: HistoryManager,
 
@@ -55,7 +63,7 @@ pub const GapBuffer = struct {
         var i: usize = 0;
         const part1 = self.getFirst();
         while (std.mem.indexOfPos(u8, part1, i, query)) |pos| {
-            try self.extmarks.append(self.allocator, .{ .logical_start = pos, .logical_end = pos + query.len, .style = .{ .bg = ansi.Magenta } });
+            try self.extmarks.append(self.allocator, .{ .ns_id = NS_SEARCH, .priority = 1, .logical_start = pos, .logical_end = pos + query.len, .style = .{ .bg = ansi.Magenta } });
             i = pos + query.len;
         }
 
@@ -63,7 +71,7 @@ pub const GapBuffer = struct {
         const part2 = self.getSecond();
         while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
             const logical_pos = self.gap_start + pos;
-            try self.extmarks.append(self.allocator, .{ .logical_start = logical_pos, .logical_end = logical_pos + query.len, .style = .{ .bg = ansi.Magenta } });
+            try self.extmarks.append(self.allocator, .{ .ns_id = NS_SEARCH, .priority = 1, .logical_start = logical_pos, .logical_end = logical_pos + query.len, .style = .{ .bg = ansi.Magenta } });
             i = pos + query.len;
         }
     }
@@ -118,6 +126,18 @@ pub const GapBuffer = struct {
         self.extmarks.deinit(self.allocator);
         self.history.deinit();
         self.allocator.free(self.buffer);
+        if (self.ts_tree) |tree| api.c.ts_tree_delete(@as(?*api.c.TSTree, @ptrCast(@alignCast(tree))));
+    }
+
+    pub fn clearMarksByNamespace(self: *GapBuffer, ns_id: u32) void {
+        var keep_idx: usize = 0;
+        for (self.extmarks.items) |mark| {
+            if (mark.ns_id != ns_id) {
+                self.extmarks.items[keep_idx] = mark;
+                keep_idx += 1;
+            }
+        }
+        self.extmarks.shrinkRetainingCapacity(keep_idx);
     }
 
     /// Moves the cursor (and the gap) one character to the left.
@@ -187,6 +207,7 @@ pub const GapBuffer = struct {
 
         self.buffer[self.gap_start] = char;
         self.gap_start += 1;
+        self.is_dirty = true;
     }
 
     /// Removes the character immediately preceding the cursor in O(1) time.
@@ -195,6 +216,7 @@ pub const GapBuffer = struct {
         if (self.gap_start > 0) {
             self.gap_start -= 1;
         }
+        self.is_dirty = true;
     }
 
     pub fn printDebug(self: *GapBuffer) void {
@@ -312,8 +334,10 @@ pub const GapBuffer = struct {
         var target = self.extmarks.items[0].logical_start;
         for (self.extmarks.items) |mark| {
             if (mark.logical_start > self.gap_start) {
-                target = mark.logical_start;
-                break;
+                if (mark.ns_id == NS_SEARCH) {
+                    target = mark.logical_start;
+                    break;
+                }
             }
         }
         self.jumpToLogical(target);
@@ -329,8 +353,10 @@ pub const GapBuffer = struct {
             i -= 1;
             const mark = self.extmarks.items[i];
             if (mark.logical_start < self.gap_start) {
-                target = mark.logical_start;
-                break;
+                if (mark.ns_id == NS_SEARCH) {
+                    target = mark.logical_start;
+                    break;
+                }
             }
         }
         self.jumpToLogical(target);

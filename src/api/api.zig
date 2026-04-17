@@ -9,6 +9,7 @@ pub const c = @cImport({
     @cInclude("lua.h");
     @cInclude("lualib.h");
     @cInclude("lauxlib.h");
+    @cInclude("tree_sitter/api.h");
 });
 
 var global_editor: ?*core.Editor = null;
@@ -111,6 +112,8 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "jump_to", api_jump_to);
     registerFn(L, "hsplit", api_hsplit);
     registerFn(L, "vsplit", api_vsplit);
+    registerFn(L, "ts_parse", api_ts_parse);
+    registerFn(L, "ts_load_language", api_ts_load_language);
 
     c.lua_setglobal(L, "dot");
 
@@ -275,7 +278,14 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
 
     buf.history.commit() catch {};
 
+    buf.jumpToLogical(s_idx);
+    const ts_start_pos = buf.getCursorPos();
+    const ts_start_byte = @as(u32, @intCast(s_idx));
+
     buf.jumpToLogical(e_idx);
+    const ts_old_end_pos = buf.getCursorPos();
+    const ts_old_end_byte = @as(u32, @intCast(e_idx));
+
     var del_count = e_idx - s_idx;
     while (del_count > 0) : (del_count -= 1) {
         const char_to_del = buf.charAt(buf.gap_start - 1).?;
@@ -308,6 +318,23 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
         c.lua_pop(L, 1);
     }
 
+    const ts_new_end_pos = buf.getCursorPos();
+    const ts_new_end_byte = @as(u32, @intCast(buf.gap_start));
+
+    editor.ts_manager.edit(
+        buf,
+        ts_start_byte,
+        ts_old_end_byte,
+        ts_new_end_byte,
+        ts_start_pos.y,
+        ts_start_pos.x,
+        ts_old_end_pos.y,
+        ts_old_end_pos.x,
+        ts_new_end_pos.y,
+        ts_new_end_pos.x,
+    );
+
+    buf.is_dirty = true;
     buf.history.commit() catch {};
     editor.needs_redraw = true;
     editor.is_dirty = true;
@@ -473,16 +500,20 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
     const view = editor.getActiveView();
 
-    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
-    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
-    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+    const ns_id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
 
-    c.luaL_checktype(L, 4, c.LUA_TTABLE);
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
+    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 4)));
+
+    c.luaL_checktype(L, 5, c.LUA_TTABLE);
+
+    const priority = @as(u8, @intCast(c.luaL_optinteger(L, 6, 50)));
 
     var hl_style = style.Style{};
 
-    if (c.lua_istable(L, 4)) {
-        c.lua_pushvalue(L, 4);
+    if (c.lua_istable(L, 5)) {
+        c.lua_pushvalue(L, 5);
 
         hl_style.fg = parseLuaColor(L, "fg");
         hl_style.bg = parseLuaColor(L, "bg");
@@ -509,6 +540,8 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
         .logical_start = start_idx,
         .logical_end = end_idx,
         .style = hl_style,
+        .ns_id = ns_id,
+        .priority = priority,
     }) catch {};
 
     editor.needs_redraw = true;
@@ -518,8 +551,11 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
 
 export fn api_clear_style(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
-    _ = L;
-    editor.getActiveView().buf.extmarks.clearRetainingCapacity();
+
+    const ns_id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+
+    editor.getActiveView().buf.clearMarksByNamespace(ns_id);
+
     editor.needs_redraw = true;
     editor.is_dirty = true;
     return 0;
@@ -785,5 +821,48 @@ export fn api_vsplit(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
     const buf = editor.getActiveView().buf;
     editor.splitVertical(buf) catch {};
+    return 0;
+}
+
+export fn api_ts_load_language(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+
+    const lang_name_ptr = c.luaL_checklstring(L, 1, null);
+    const lib_path_ptr = c.luaL_checklstring(L, 2, null);
+    const query_path_ptr = c.luaL_checklstring(L, 3, null);
+
+    const lang_name = std.mem.span(lang_name_ptr);
+    const lib_path = std.mem.span(lib_path_ptr);
+    const query_path = std.mem.span(query_path_ptr);
+
+    editor.ts_manager.loadLanguage(view.buf, lang_name, lib_path, query_path) catch |err| {
+        const err_msg = std.fmt.allocPrint(editor.allocator, "TS Load Error: {s}", .{@errorName(err)}) catch return 0;
+        defer editor.allocator.free(err_msg);
+        editor.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+        return 0;
+    };
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+
+    return 0;
+}
+
+export fn api_ts_parse(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+
+    editor.ts_manager.parse(view.buf);
+
+    if (view.buf.ts_tree) |tree| {
+        const root_node = c.ts_tree_root_node(@as(?*c.TSTree, @ptrCast(@alignCast(tree))));
+
+        const string_ptr = c.ts_node_string(root_node);
+        defer c.free(string_ptr);
+        const ast_string = std.mem.span(string_ptr);
+        _ = c.lua_pushlstring(L, ast_string.ptr, ast_string.len);
+        return 1;
+    }
     return 0;
 }

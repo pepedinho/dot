@@ -1,9 +1,11 @@
-local json = require("examples.json")
+local json = require("json")
 local zls_id = nil
 local stdout_buffer = ""
 local file_version = 1
 local error_fg = "#F14C4C"
 local error_bg = "#421B1B"
+local LSP_NAMESPACE = 3
+local LSP_PRIORITY = 100
 
 local function make_request(id, method, params_json_str)
 	local payload = string.format('{"jsonrpc":"2.0","id":%d,"method":"%s","params":%s}', id, method, params_json_str)
@@ -54,7 +56,6 @@ dot.hook_on("ModeChanged", function()
 end)
 
 local function handle_lsp_message(data)
-	-- DEBUG : On affiche tout ce que ZLS nous envoie en direct !
 	if data.method then
 		dot.print("📡 ZLS a send : " .. data.method)
 	end
@@ -82,7 +83,7 @@ local function handle_lsp_message(data)
 		})
 		dot.server_send(zls_id, did_open_msg)
 	elseif data.method == "textDocument/publishDiagnostics" then
-		dot.clear_style()
+		dot.clear_style(LSP_NAMESPACE)
 		dot.clear_ghosts()
 		local diags = data.params.diagnostics
 		if #diags > 0 then
@@ -95,7 +96,7 @@ local function handle_lsp_message(data)
 					length = 1
 				end
 
-				dot.add_style(row, col, length, { fg = error_fg, underline = true })
+				dot.add_style(LSP_NAMESPACE, row, col, length, { fg = error_fg, underline = true }, LSP_PRIORITY)
 				dot.add_ghost(row, col, diag.message, "└── ", { fg = error_fg, bg = error_bg, italic = true })
 			end
 		else

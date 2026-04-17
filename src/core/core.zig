@@ -16,6 +16,7 @@ const job = @import("worker.zig");
 const ansi = @import("../view/ansi.zig");
 
 const c = api.c;
+const TSManager = @import("treesitter.zig").TSManager;
 const PumManager = @import("../view/pum.zig").PumManager;
 const ToastManager = @import("../view/toast.zig").ToastManager;
 const Action = actions.Action;
@@ -137,6 +138,10 @@ pub const Editor = struct {
     hooks: std.StringHashMap(std.ArrayList(c_int)),
     job_manager: JobManager,
     server_manager: ServerManager,
+    // =======================
+    // TREE SITTER
+    // =======================
+    ts_manager: TSManager,
 
     pub fn init(allocator: std.mem.Allocator) !Editor {
         var binds = std.EnumArray(Mode, std.StringHashMap(Action)).initUndefined();
@@ -166,6 +171,7 @@ pub const Editor = struct {
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
             .job_manager = JobManager.init(allocator),
             .server_manager = ServerManager.init(allocator),
+            .ts_manager = try TSManager.init(allocator),
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
@@ -259,6 +265,7 @@ pub const Editor = struct {
         self.pum.deinit();
         self.job_manager.deinit();
         self.server_manager.deinit();
+        self.ts_manager.deinit();
         if (self.clipboard) |cl| self.allocator.free(cl);
     }
 
@@ -360,7 +367,13 @@ pub const Editor = struct {
 
                 try view.buf.history.recordInsert(view.buf.gap_start, ch);
 
+                const start_pos = view.buf.getCursorPos();
+                const start_byte = @as(u32, @intCast(view.buf.gap_start));
+
                 try view.buf.insertChar(ch);
+
+                const end_pos = view.buf.getCursorPos();
+                self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                 for (self.views.items) |*v| {
                     if (v.buf == view.buf) {
                         v.is_dirty = true;
@@ -371,7 +384,13 @@ pub const Editor = struct {
             .InsertNewLine => {
                 if (view.is_readonly) return;
                 try view.buf.history.recordInsert(view.buf.gap_start, '\n');
+                const start_pos = view.buf.getCursorPos();
+                const start_byte = @as(u32, @intCast(view.buf.gap_start));
+
                 try view.buf.insertChar('\n');
+
+                const end_pos = view.buf.getCursorPos();
+                self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + 1, start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                 self.needs_redraw = true;
             },
             .DeleteChar => {
@@ -380,8 +399,16 @@ pub const Editor = struct {
                 const char_to_delete = view.buf.buffer[view.buf.gap_start - 1];
                 try view.buf.history.recordDelete(view.buf.gap_start - 1, char_to_delete);
 
+                const old_pos = view.buf.getCursorPos();
+                const old_end_byte = @as(u32, @intCast(view.buf.gap_start));
+                const start_byte = old_end_byte - 1;
+
                 const delete_nl = char_to_delete == '\n';
                 view.buf.backspace();
+
+                const new_pos = view.buf.getCursorPos();
+                self.ts_manager.edit(view.buf, start_byte, old_end_byte, start_byte, new_pos.y, new_pos.x, old_pos.y, old_pos.x, new_pos.y, new_pos.x);
+
                 for (self.views.items) |*v| {
                     if (v.buf == view.buf) {
                         v.is_dirty = true;
@@ -429,10 +456,16 @@ pub const Editor = struct {
             .Paste => {
                 if (view.is_readonly) return;
                 if (self.clipboard) |clip| {
+                    const start_pos = view.buf.getCursorPos();
+                    const start_byte = @as(u32, @intCast(view.buf.gap_start));
                     for (clip) |cl| {
                         try view.buf.insertChar(cl);
                     }
+
+                    const end_pos = view.buf.getCursorPos();
+                    self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + @as(u32, @intCast(clip.len)), start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                     try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
+
                     try self.toast_manager.push("Pasted", 1500, .{ .fg = ansi.Green, .bg = ansi.Black, .bold = true });
                     self.needs_redraw = true;
                 } else {
@@ -789,7 +822,10 @@ pub const Editor = struct {
                                 try self.handleKeyPress(ch);
                             },
                             .enter => try self.pushAction(.InsertNewLine),
-                            .backspace => try self.pushAction(.DeleteChar),
+                            .backspace => {
+                                if (!self.triggerHook("BackSpace"))
+                                    try self.pushAction(.DeleteChar);
+                            },
                             .left => try self.pushAction(.MoveLeft),
                             .right => try self.pushAction(.MoveRight),
                             .up => try self.pushAction(.MoveUp),
@@ -848,9 +884,38 @@ pub const Editor = struct {
                     self.needs_redraw = true;
                 }
                 var has_dirty_views = false;
-                for (self.views.items) |v| {
+                for (self.views.items, 0..) |v, i| {
                     if (v.is_dirty) has_dirty_views = true;
+                    var buffer_already_processed = false;
+                    for (self.views.items[0..i]) |prev| {
+                        if (prev.buf == v.buf) {
+                            buffer_already_processed = true;
+                            break;
+                        }
+                    }
+                    if (buffer_already_processed) continue;
+                    if (v.buf.is_dirty or self.needs_redraw) {
+                        var start_row = v.row_offset + 1;
+                        var end_row = v.row_offset + v.height + 2;
+                        for (self.views.items[i + 1 ..]) |other| {
+                            if (other.buf == v.buf) {
+                                start_row = @min(start_row, other.row_offset + 1);
+                                end_row = @max(end_row, other.row_offset + other.height + 2);
+                            }
+                        }
+                        self.ts_manager.parse(v.buf);
+                        const start_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(start_row, 1)));
+                        const end_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(end_row, 1)));
+                        self.ts_manager.highlight(v.buf, start_byte, end_byte);
+                        v.buf.is_dirty = false;
+                    }
                 }
+
+                // self.ts_manager.parse(active.buf);
+                // const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
+                // const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
+                // self.ts_manager.highlight(active.buf, start_byte, end_byte);
+                // active.buf.is_dirty = false;
 
                 if (self.needs_redraw) {
                     // try ui.refreshScreen(stdout, self);
@@ -907,7 +972,12 @@ pub const Editor = struct {
         if (!is_prefix) {
             if (self.pending_keys.items.len == 1) {
                 switch (self.mode) {
-                    .Insert => try self.pushAction(.{ .InsertChar = ch }),
+                    .Insert => {
+                        if (ch == ' ') {
+                            _ = self.triggerHook("SpaceInsert");
+                        }
+                        try self.pushAction(.{ .InsertChar = ch });
+                    },
                     .Command, .Search => try self.pushAction(.{ .CommandChar = ch }),
                     .Normal => {},
                 }
