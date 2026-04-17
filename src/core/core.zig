@@ -884,15 +884,31 @@ pub const Editor = struct {
                     self.needs_redraw = true;
                 }
                 var has_dirty_views = false;
-                for (self.views.items) |v| {
+                for (self.views.items, 0..) |v, i| {
+                    if (v.is_dirty) has_dirty_views = true;
+                    var buffer_already_processed = false;
+                    for (self.views.items[0..i]) |prev| {
+                        if (prev.buf == v.buf) {
+                            buffer_already_processed = true;
+                            break;
+                        }
+                    }
+                    if (buffer_already_processed) continue;
                     if (v.buf.is_dirty or self.needs_redraw) {
+                        var start_row = v.row_offset + 1;
+                        var end_row = v.row_offset + v.height + 2;
+                        for (self.views.items[i + 1 ..]) |other| {
+                            if (other.buf == v.buf) {
+                                start_row = @min(start_row, other.row_offset + 1);
+                                end_row = @max(end_row, other.row_offset + other.height + 2);
+                            }
+                        }
                         self.ts_manager.parse(v.buf);
-                        const start_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(v.row_offset + 1, 1)));
-                        const end_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(v.row_offset + v.height + 2, 1)));
+                        const start_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(start_row, 1)));
+                        const end_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(end_row, 1)));
                         self.ts_manager.highlight(v.buf, start_byte, end_byte);
                         v.buf.is_dirty = false;
                     }
-                    if (v.is_dirty) has_dirty_views = true;
                 }
 
                 // self.ts_manager.parse(active.buf);
