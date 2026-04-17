@@ -38,6 +38,7 @@ pub const TSManager = struct {
 
     pub fn init(allocator: std.mem.Allocator) !TSManager {
         const parser = c.ts_parser_new() orelse return error.TSInitFailed;
+        errdefer c.ts_parser_delete(parser);
         const cursor = c.ts_query_cursor_new() orelse return error.TSCursorFailed;
 
         return .{
