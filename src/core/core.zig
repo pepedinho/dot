@@ -1094,12 +1094,16 @@ pub const Editor = struct {
             try meta_file.writeAll(dot_lua_content);
             meta_file.close();
 
-            const luarc_content =
-                \\{
-                \\    "workspace": { "library": [".meta"], "checkThirdParty": false },
-                \\    "diagnostics": { "globals": ["dot"] }
-                \\}
-            ;
+            const pwd = std.posix.getenv("PWD") orelse ".";
+            const luarc_content = try std.fmt.allocPrint(aa,
+                \\{{
+                \\    "workspace": {{
+                \\        "library": [".meta", "{s}/runtime/lua"],
+                \\        "checkThirdParty": false
+                \\    }},
+                \\    "diagnostics": {{ "globals": ["dot"] }}
+                \\}}
+            , .{pwd});
 
             const luarc_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.luarc.json", .{config_path}), .{});
             try luarc_file.writeAll(luarc_content);
