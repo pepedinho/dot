@@ -1081,6 +1081,9 @@ export fn api_get_debug_info(L: ?*c.lua_State) c_int {
     c.lua_pushinteger(L, @intCast(editor.last_fps));
     c.lua_setfield(L, -2, "fps");
 
+    c.lua_pushinteger(L, @intCast(std.time.milliTimestamp()));
+    c.lua_setfield(L, -2, "timestamp");
+
     var total_mem: usize = 0;
     for (editor.buffers.items) |b| {
         total_mem += b.buffer.len;

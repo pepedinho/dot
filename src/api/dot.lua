@@ -238,6 +238,7 @@ function dot.clear_buffer_style(buf_id, ns_id) end
 
 ---@class DebugInfo
 ---@field fps integer
+---@field timestamp integer
 ---@field mem_kb integer
 ---@field queue_size integer
 ---@field buffers DebugBuffer[]
