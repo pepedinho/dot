@@ -4,6 +4,7 @@ const style = @import("../view/style.zig");
 const job = @import("../core/worker.zig");
 const ansi = @import("../view/ansi.zig");
 const utils = @import("../utils.zig");
+const gap = @import("../core/gap.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -114,6 +115,10 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "vsplit", api_vsplit);
     registerFn(L, "ts_parse", api_ts_parse);
     registerFn(L, "ts_load_language", api_ts_load_language);
+    registerFn(L, "create_buffer", api_create_buffer);
+    registerFn(L, "get_buffer_by_name", api_get_buffer_by_name);
+    registerFn(L, "set_view_buffer", api_set_view_buffer);
+    registerFn(L, "append_to_buffer", api_append_to_buffer);
 
     c.lua_setglobal(L, "dot");
 
@@ -145,7 +150,7 @@ export fn api_print(L: ?*c.lua_State) c_int {
     const str_ptr = c.luaL_checklstring(L, 1, null);
     const message = std.mem.span(str_ptr);
 
-    editor.toast_manager.push(message, 3000, .{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true }) catch {};
+    editor.toastNotify(message, 3000, .{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true }) catch {};
     editor.needs_redraw = true;
     return 0;
 }
@@ -839,7 +844,7 @@ export fn api_ts_load_language(L: ?*c.lua_State) c_int {
     editor.ts_manager.loadLanguage(view.buf, lang_name, lib_path, query_path) catch |err| {
         const err_msg = std.fmt.allocPrint(editor.allocator, "TS Load Error: {s}", .{@errorName(err)}) catch return 0;
         defer editor.allocator.free(err_msg);
-        editor.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+        editor.toastNotify(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
         return 0;
     };
 
@@ -864,5 +869,89 @@ export fn api_ts_parse(L: ?*c.lua_State) c_int {
         _ = c.lua_pushlstring(L, ast_string.ptr, ast_string.len);
         return 1;
     }
+    return 0;
+}
+
+export fn api_create_buffer(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const name_ptr = c.luaL_checklstring(L, 1, null);
+    const filename = std.mem.span(name_ptr);
+
+    const new_buf = editor.allocator.create(gap.GapBuffer) catch return 0;
+    new_buf.* = gap.GapBuffer.init(editor.allocator) catch return 0;
+
+    new_buf.filename = editor.allocator.dupe(u8, filename) catch return 0;
+    editor.buffers.append(editor.allocator, new_buf) catch return 0;
+
+    const buf_id = editor.buffers.items.len - 1;
+    c.lua_pushinteger(L, @intCast(buf_id));
+    return 1;
+}
+
+export fn api_get_buffer_by_name(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const name_ptr = c.luaL_checklstring(L, 1, null);
+    const target_name = std.mem.span(name_ptr);
+
+    for (editor.buffers.items, 0..) |b, i| {
+        if (b.filename) |f| {
+            if (std.mem.eql(u8, f, target_name)) {
+                c.lua_pushinteger(L, @intCast(i));
+                return 1;
+            }
+        }
+    }
+
+    c.lua_pushnil(L);
+    return 1;
+}
+
+export fn api_set_view_buffer(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const view = editor.getActiveView();
+    const target_buf = editor.buffers.items[buf_id];
+
+    view.buf = target_buf;
+    view.col_offset = 0;
+
+    const total_lines = target_buf.getCursorPos().y;
+    view.row_offset = if (total_lines > view.height) total_lines - view.height else 0;
+
+    view.is_readonly = true;
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_append_to_buffer(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    const text_ptr = c.luaL_checklstring(L, 2, null);
+    const text = std.mem.span(text_ptr);
+
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const target_buf = editor.buffers.items[buf_id];
+
+    target_buf.jumpToLogical(target_buf.len());
+
+    for (text) |ch| {
+        target_buf.insertChar(ch) catch {};
+    }
+    target_buf.insertChar('\n') catch {};
+
+    target_buf.is_dirty = true;
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+
     return 0;
 }

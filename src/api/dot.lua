@@ -163,3 +163,29 @@ function dot.ts_parse() end
 --- @param lib string Path to the .so file
 --- @param query string Path to the highlights scm file
 function dot.ts_load_language(name, lib, query) end
+
+--- Creates a new gap buffer with the specified filename/name and adds it to the editor's buffer list.
+--- Useful for creating virtual buffers (e.g., "*Messages*", "*NetRW*").
+---@param name string The name or virtual filename of the new buffer.
+---@return integer buf_id The unique ID (index) of the newly created buffer.
+function dot.create_buffer(name) end
+
+--- Searches the editor's active buffers for one matching the given name.
+---@param name string The name or virtual filename to search for.
+---@return integer|nil buf_id The ID of the buffer if found, otherwise `nil`.
+function dot.get_buffer_by_name(name) end
+
+--- Changes the currently active view (pane) to display the buffer associated with `buf_id`.
+--- It automatically scrolls to the bottom and sets the view to read-only mode.
+---@param buf_id integer The ID of the target buffer to display.
+function dot.set_view_buffer(buf_id) end
+
+--- Appends text directly to the end of a specific buffer without modifying the current cursor position or active view.
+--- Automatically appends a newline character at the end of the inserted text.
+---@param buf_id integer The ID of the target buffer.
+---@param text string The text content to append.
+function dot.append_to_buffer(buf_id, text) end
+
+--- Prints a message to the UI as a toast notification and archives it in the "*Messages*" virtual buffer.
+---@param msg string The message to display and log.
+function dot.print(msg) end

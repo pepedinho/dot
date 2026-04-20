@@ -15,6 +15,7 @@ const api = @import("../api/api.zig");
 const job = @import("worker.zig");
 const ansi = @import("../view/ansi.zig");
 
+const Style = @import("../view/style.zig").Style;
 const c = api.c;
 const TSManager = @import("treesitter.zig").TSManager;
 const PumManager = @import("../view/pum.zig").PumManager;
@@ -208,14 +209,14 @@ pub const Editor = struct {
             if (api.c.luaL_loadfilex(L, init_path_c.ptr, null) == 0) {
                 if (api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
                     const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                    self.toast_manager.push(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                    self.toastNotify(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
                     api.c.lua_pop(L, 1);
                 } else {
-                    self.toast_manager.push("Config loaded !", 2000, .{ .fg = ansi.Green, .bg = ansi.Black }) catch {};
+                    self.toastNotify("Config loaded !", 2000, .{ .fg = ansi.Green, .bg = ansi.Black }) catch {};
                 }
             } else {
                 const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                self.toast_manager.push(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                self.toastNotify(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
                 api.c.lua_pop(L, 1);
             }
         }
@@ -337,7 +338,7 @@ pub const Editor = struct {
 
                     if (api.c.lua_pcallk(L, 0, 0, 0, 0, null) != 0) {
                         const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                        self.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+                        self.toastNotify(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
                         api.c.lua_pop(L, 1);
                     }
                     self.needs_redraw = true;
@@ -1159,5 +1160,42 @@ pub const Editor = struct {
 
             try self.toast_manager.push("Install done !", 3000, .{ .fg = ansi.White, .bg = ansi.Green, .bold = true });
         };
+    }
+
+    pub fn toastNotify(self: *Editor, msg: []const u8, duration: u32, style: Style) !void {
+        try self.toast_manager.push(msg, duration, style);
+        self.logMessage(msg);
+    }
+
+    pub fn logMessage(self: *Editor, msg: []const u8) void {
+        var target_buf: ?*buffer.GapBuffer = null;
+
+        for (self.buffers.items) |buf| {
+            if (buf.filename) |name| {
+                if (std.mem.eql(u8, name, "*Messages*")) {
+                    target_buf = buf;
+                    break;
+                }
+            }
+        }
+
+        if (target_buf == null) {
+            const new_buf = self.allocator.create(buffer.GapBuffer) catch return;
+            new_buf.* = buffer.GapBuffer.init(self.allocator) catch return;
+            new_buf.filename = self.allocator.dupe(u8, "*Messages*") catch return;
+            self.buffers.append(self.allocator, new_buf) catch return;
+            target_buf = new_buf;
+        }
+
+        const msg_buf = target_buf.?;
+
+        msg_buf.jumpToLogical(msg_buf.len());
+
+        for (msg) |ch| {
+            msg_buf.insertChar(ch) catch {};
+        }
+        msg_buf.insertChar('\n') catch {};
+
+        msg_buf.is_dirty = true;
     }
 };
