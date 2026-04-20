@@ -119,6 +119,12 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "get_buffer_by_name", api_get_buffer_by_name);
     registerFn(L, "set_view_buffer", api_set_view_buffer);
     registerFn(L, "append_to_buffer", api_append_to_buffer);
+    registerFn(L, "set_buffer_lines", api_set_buffer_lines);
+    registerFn(L, "set_buffer_cursor", api_set_buffer_cursor);
+    registerFn(L, "add_buffer_style", api_add_buffer_style);
+    registerFn(L, "clear_buffer_style", api_clear_buffer_style);
+    registerFn(L, "get_debug_info", api_get_debug_info);
+    registerFn(L, "set_interval", api_set_interval);
 
     c.lua_setglobal(L, "dot");
 
@@ -237,17 +243,14 @@ export fn api_get_lines(L: ?*c.lua_State) c_int {
     return 1;
 }
 
-export fn api_set_lines(L: ?*c.lua_State) c_int {
-    const editor = global_editor orelse return 0;
-    const view = editor.getActiveView();
-    if (view.is_readonly) return 0;
-
-    const start_row = @as(usize, @intCast(@max(1, c.luaL_checkinteger(L, 1))));
-    const end_row = @as(usize, @intCast(@max(start_row, c.luaL_checkinteger(L, 2))));
-
-    c.luaL_checktype(L, 3, c.LUA_TTABLE);
-
-    const buf = view.buf;
+fn internal_set_lines(
+    L: ?*c.lua_State,
+    editor: *core.Editor,
+    buf: *core.buffer.GapBuffer,
+    start_row: usize,
+    end_row: usize,
+    table_stack_idx: c_int,
+) void {
     const len = buf.len();
 
     var current_row: usize = 1;
@@ -294,15 +297,17 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
     var del_count = e_idx - s_idx;
     while (del_count > 0) : (del_count -= 1) {
         const char_to_del = buf.charAt(buf.gap_start - 1).?;
-        buf.history.recordDelete(buf.gap_start - 1, char_to_del) catch {};
+        if (!buf.disable_history) {
+            buf.history.recordDelete(buf.gap_start - 1, char_to_del) catch {};
+        }
         buf.backspace();
     }
 
-    const table_len = c.luaL_len(L, 3);
-    var table_idx: c_int = 1;
+    const table_len = c.luaL_len(L, table_stack_idx);
+    var t_idx: c_int = 1;
 
-    while (table_idx <= table_len) : (table_idx += 1) {
-        _ = c.lua_rawgeti(L, 3, table_idx);
+    while (t_idx <= table_len) : (t_idx += 1) {
+        _ = c.lua_rawgeti(L, table_stack_idx, t_idx);
 
         if (c.lua_isstring(L, -1) != 0) {
             var str_len: usize = 0;
@@ -310,13 +315,17 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
             const line_str = str_ptr[0..str_len];
 
             for (line_str) |char| {
-                buf.history.recordInsert(buf.gap_start, char) catch {};
+                if (!buf.disable_history) {
+                    buf.history.recordInsert(buf.gap_start, char) catch {};
+                }
                 buf.insertChar(char) catch {};
             }
 
-            const is_last = (table_idx == table_len);
+            const is_last = (t_idx == table_len);
             if (!is_last or deleted_newline) {
-                buf.history.recordInsert(buf.gap_start, '\n') catch {};
+                if (!buf.disable_history) {
+                    buf.history.recordInsert(buf.gap_start, '\n') catch {};
+                }
                 buf.insertChar('\n') catch {};
             }
         }
@@ -340,9 +349,41 @@ export fn api_set_lines(L: ?*c.lua_State) c_int {
     );
 
     buf.is_dirty = true;
-    buf.history.commit() catch {};
+    if (!buf.disable_history) {
+        buf.history.commit() catch {};
+    }
     editor.needs_redraw = true;
     editor.is_dirty = true;
+}
+
+export fn api_set_lines(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const view = editor.getActiveView();
+    if (view.is_readonly) return 0;
+
+    const start_row = @as(usize, @intCast(@max(1, c.luaL_checkinteger(L, 1))));
+    const end_row = @as(usize, @intCast(@max(start_row, c.luaL_checkinteger(L, 2))));
+
+    c.luaL_checktype(L, 3, c.LUA_TTABLE);
+
+    internal_set_lines(L, editor, view.buf, start_row, end_row, 3);
+
+    return 0;
+}
+
+export fn api_set_buffer_lines(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    const start_row = @as(usize, @intCast(@max(1, c.luaL_checkinteger(L, 2))));
+    const end_row = @as(usize, @intCast(@max(start_row, c.luaL_checkinteger(L, 3))));
+
+    c.luaL_checktype(L, 4, c.LUA_TTABLE);
+
+    if (buf_id >= editor.buffers.items.len) return 0;
+    const target_buf = editor.buffers.items[buf_id];
+
+    internal_set_lines(L, editor, target_buf, start_row, end_row, 4);
 
     return 0;
 }
@@ -539,7 +580,7 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
     }
 
     const start_idx = view.buf.getLogicalFromRowCol(row, col);
-    const end_idx = start_idx + length;
+    const end_idx = view.buf.getLogicalFromRowCol(row, col + length);
 
     view.buf.extmarks.append(editor.allocator, .{
         .logical_start = start_idx,
@@ -882,6 +923,10 @@ export fn api_create_buffer(L: ?*c.lua_State) c_int {
     new_buf.* = gap.GapBuffer.init(editor.allocator) catch return 0;
 
     new_buf.filename = editor.allocator.dupe(u8, filename) catch return 0;
+    if (filename.len > 0 and filename[0] == '*') {
+        new_buf.disable_history = true;
+    }
+
     editor.buffers.append(editor.allocator, new_buf) catch return 0;
 
     const buf_id = editor.buffers.items.len - 1;
@@ -952,6 +997,179 @@ export fn api_append_to_buffer(L: ?*c.lua_State) c_int {
     target_buf.is_dirty = true;
     editor.needs_redraw = true;
     editor.is_dirty = true;
+
+    return 0;
+}
+
+export fn api_set_buffer_cursor(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 2)));
+    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+
+    if (buf_id >= editor.buffers.items.len) return 0;
+    const target_buf = editor.buffers.items[buf_id];
+
+    target_buf.jumpTo(.{ .y = row, .x = col });
+    return 0;
+}
+
+export fn api_add_buffer_style(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    if (buf_id >= editor.buffers.items.len) return 0;
+    const target_buf = editor.buffers.items[buf_id];
+
+    const ns_id = @as(u32, @intCast(c.luaL_checkinteger(L, 2)));
+    const row = @as(usize, @intCast(c.luaL_checkinteger(L, 3)));
+    const col = @as(usize, @intCast(c.luaL_checkinteger(L, 4)));
+    const length = @as(usize, @intCast(c.luaL_checkinteger(L, 5)));
+
+    c.luaL_checktype(L, 6, c.LUA_TTABLE);
+    const priority = @as(u8, @intCast(c.luaL_optinteger(L, 7, 50)));
+
+    var hl_style = style.Style{};
+    if (c.lua_istable(L, 6)) {
+        c.lua_pushvalue(L, 6);
+        hl_style.fg = parseLuaColor(L, "fg");
+        hl_style.bg = parseLuaColor(L, "bg");
+        _ = c.lua_getfield(L, -1, "italic");
+        hl_style.italic = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+        _ = c.lua_getfield(L, -1, "bold");
+        hl_style.bold = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+        c.lua_pop(L, 1);
+    }
+
+    const start_idx = target_buf.getLogicalFromRowCol(row, col);
+    const end_idx = target_buf.getLogicalFromRowCol(row, col + length);
+
+    target_buf.extmarks.append(editor.allocator, .{
+        .logical_start = start_idx,
+        .logical_end = end_idx,
+        .style = hl_style,
+        .ns_id = ns_id,
+        .priority = priority,
+    }) catch {};
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_clear_buffer_style(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    if (buf_id >= editor.buffers.items.len) return 0;
+    const target_buf = editor.buffers.items[buf_id];
+
+    const ns_id = @as(u32, @intCast(c.luaL_checkinteger(L, 2)));
+    target_buf.clearMarksByNamespace(ns_id);
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_get_debug_info(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    c.lua_newtable(L);
+
+    c.lua_pushinteger(L, @intCast(editor.last_fps));
+    c.lua_setfield(L, -2, "fps");
+
+    var total_mem: usize = 0;
+    for (editor.buffers.items) |b| {
+        total_mem += b.buffer.len;
+    }
+    c.lua_pushinteger(L, @intCast(total_mem / 1024));
+    c.lua_setfield(L, -2, "mem_kb");
+
+    c.lua_pushinteger(L, @intCast(editor.action_queue.count()));
+    c.lua_setfield(L, -2, "queue_size");
+
+    c.lua_newtable(L);
+    for (editor.buffers.items, 0..) |b, i| {
+        c.lua_newtable(L);
+        const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
+
+        c.lua_pushinteger(L, @intCast(logical_size));
+        c.lua_setfield(L, -2, "logical_size");
+        c.lua_pushinteger(L, @intCast(b.gap_start));
+        c.lua_setfield(L, -2, "gap_start");
+        c.lua_pushinteger(L, @intCast(b.gap_end));
+        c.lua_setfield(L, -2, "gap_end");
+        c.lua_pushinteger(L, @intCast(b.len()));
+        c.lua_setfield(L, -2, "len");
+
+        const fname = if (b.filename) |f| f else "none";
+        _ = c.lua_pushlstring(L, fname.ptr, fname.len);
+        c.lua_setfield(L, -2, "filename");
+
+        c.lua_rawseti(L, -2, @intCast(i + 1));
+    }
+    c.lua_setfield(L, -2, "buffers");
+
+    c.lua_newtable(L);
+    for (editor.views.items, 0..) |view_item, i| {
+        c.lua_newtable(L);
+
+        var b_idx: usize = 0;
+        for (editor.buffers.items, 0..) |b, j| {
+            if (b == view_item.buf) {
+                b_idx = j;
+                break;
+            }
+        }
+
+        c.lua_pushinteger(L, @intCast(b_idx));
+        c.lua_setfield(L, -2, "buf_idx");
+        c.lua_pushboolean(L, if (i == editor.active_view_idx) 1 else 0);
+        c.lua_setfield(L, -2, "is_active");
+        c.lua_pushinteger(L, @intCast(view_item.x));
+        c.lua_setfield(L, -2, "x");
+        c.lua_pushinteger(L, @intCast(view_item.y));
+        c.lua_setfield(L, -2, "y");
+        c.lua_pushinteger(L, @intCast(view_item.width));
+        c.lua_setfield(L, -2, "width");
+        c.lua_pushinteger(L, @intCast(view_item.height));
+        c.lua_setfield(L, -2, "height");
+        c.lua_pushboolean(L, if (view_item.is_readonly) 1 else 0);
+        c.lua_setfield(L, -2, "is_readonly");
+
+        c.lua_rawseti(L, -2, @intCast(i + 1));
+    }
+    c.lua_setfield(L, -2, "views");
+
+    c.lua_newtable(L);
+    var curr = editor.action_queue.tail;
+    var count: usize = 0;
+    var lua_idx: c_int = 1;
+    while (curr != editor.action_queue.head and count < 10) : (curr = (curr + 1) % editor.action_queue.buffer.len) {
+        const act = editor.action_queue.buffer[curr];
+        const act_name = @tagName(std.meta.activeTag(act));
+        _ = c.lua_pushlstring(L, act_name.ptr, act_name.len);
+        c.lua_rawseti(L, -2, lua_idx);
+        lua_idx += 1;
+        count += 1;
+    }
+    c.lua_setfield(L, -2, "actions");
+
+    return 1;
+}
+
+export fn api_set_interval(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const interval_ms = @as(i64, @intCast(c.luaL_checkinteger(L, 1)));
+    c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
+
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+
+    editor.scheduler.add(.{ .LuaCallback = ref_id }, interval_ms) catch {};
 
     return 0;
 }

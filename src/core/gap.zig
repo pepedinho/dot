@@ -35,6 +35,7 @@ pub const GapBuffer = struct {
     extmarks: std.ArrayList(ExMark),
     is_dirty: bool = true,
     ts_tree: ?*anyopaque = null,
+    disable_history: bool = false,
 
     history: HistoryManager,
 
@@ -426,15 +427,21 @@ pub const GapBuffer = struct {
         const total_len = self.len();
 
         for (0..total_len) |i| {
-            if (current_row == target_row and current_col >= target_col) return i;
-
             const c = self.charAt(i).?;
+            const is_continuation = ((c & 0xC0) == 0x80);
+
+            if (!is_continuation) {
+                if (current_row == target_row and current_col >= target_col) return i;
+            }
+
             if (c == '\n') {
+                if (current_row == target_row) return i;
+
                 current_row += 1;
                 current_col = 1;
             } else if (c == '\t') {
                 current_col += TAB_SIZE;
-            } else {
+            } else if (!is_continuation) {
                 current_col += 1;
             }
         }
