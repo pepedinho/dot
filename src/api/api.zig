@@ -1040,6 +1040,9 @@ export fn api_add_buffer_style(L: ?*c.lua_State) c_int {
         _ = c.lua_getfield(L, -1, "bold");
         hl_style.bold = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
+        _ = c.lua_getfield(L, -1, "underline");
+        hl_style.underline = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
         c.lua_pop(L, 1);
     }
 
@@ -1168,11 +1171,19 @@ export fn api_set_interval(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
 
     const interval_ms = @as(i64, @intCast(c.luaL_checkinteger(L, 1)));
+
+    if (interval_ms <= 0) {
+        return c.luaL_error(L, "interval_ms must be > 0");
+    }
+
     c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
 
     const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
 
-    editor.scheduler.add(.{ .LuaCallback = ref_id }, interval_ms) catch {};
+    editor.scheduler.add(.{ .LuaCallback = ref_id }, interval_ms) catch {
+        c.luaL_unref(L, c.LUA_REGISTRYINDEX, ref_id);
+        return 0;
+    };
 
     return 0;
 }

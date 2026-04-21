@@ -95,7 +95,7 @@ function dot.hide_pum() end
 ---@param col integer The starting column (1-indexed)
 ---@param length integer The number of characters to color
 ---@param style DotStyle Style definition
----@param prio integer Priority of the style
+---@param prio integer Priority of the style, Default 50 when omitted
 function dot.add_style(id, row, col, length, style, prio) end
 
 ---Cleans all style from the active buffer with the provided id.
@@ -194,10 +194,6 @@ function dot.set_view_buffer(buf_id) end
 ---@param buf_id integer The ID of the target buffer.
 ---@param text string The text content to append.
 function dot.append_to_buffer(buf_id, text) end
-
---- Prints a message to the UI as a toast notification and archives it in the "*Messages*" virtual buffer.
----@param msg string The message to display and log.
-function dot.print(msg) end
 
 ---Moves the cursor to a specific logical position within a given buffer.
 ---@param buf_id integer The ID of the target buffer.

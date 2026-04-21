@@ -79,6 +79,13 @@ end
 --  BRAILLE SUB-PIXEL CANVAS
 -- ==============================================================================
 
+local SUB_IDX_MAP = {
+	{ 0x01, 0x08 },
+	{ 0x02, 0x10 },
+	{ 0x04, 0x20 },
+	{ 0x40, 0x80 },
+}
+
 local BrailleCanvas = {}
 BrailleCanvas.__index = BrailleCanvas
 
@@ -112,14 +119,7 @@ function BrailleCanvas:set_pixel(px, py)
 	local sub_x = (px - 1) % 2
 	local sub_y = (py - 1) % 4
 
-	local sub_idx_map = {
-		{ 0x01, 0x08 },
-		{ 0x02, 0x10 },
-		{ 0x04, 0x20 },
-		{ 0x40, 0x80 },
-	}
-
-	local mask = sub_idx_map[sub_y + 1][sub_x + 1]
+	local mask = SUB_IDX_MAP[sub_y + 1][sub_x + 1]
 	self.dots[cell_idx] = bit_or(self.dots[cell_idx], mask)
 end
 
