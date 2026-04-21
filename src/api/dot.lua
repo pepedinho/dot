@@ -52,6 +52,14 @@ function dot.get_lines(start_row, end_row) end
 ---@param lines string[] An array of strings containing the new lines to insert.
 function dot.set_lines(start_row, end_row, lines) end
 
+---Replaces a block of lines in the <id> buffer.
+---To insert lines without deleting any, `start_row` and `end_row` must be identical.
+---@param buf_id integer Id of the targeted buffer
+---@param start_row integer Starting row of the deletion block.
+---@param end_row integer Ending row of the deletion block.
+---@param lines string[] An array of strings containing the new lines to insert.
+function dot.set_buffer_lines(buf_id, start_row, end_row, lines) end
+
 ---Registers a callback function for a specific editor event.
 ---If the callback returns `true`, the editor's default behavior is prevented (Prevent Default).
 ---@param event_name string The name of the event (e.g., "BufWritePre", "CmdTab", "CmdEnter").
@@ -87,7 +95,8 @@ function dot.hide_pum() end
 ---@param col integer The starting column (1-indexed)
 ---@param length integer The number of characters to color
 ---@param style DotStyle Style definition
-function dot.add_style(id, row, col, length, style) end
+---@param prio integer Priority of the style, Default 50 when omitted
+function dot.add_style(id, row, col, length, style, prio) end
 
 ---Cleans all style from the active buffer with the provided id.
 function dot.clear_style(id) end
@@ -186,6 +195,57 @@ function dot.set_view_buffer(buf_id) end
 ---@param text string The text content to append.
 function dot.append_to_buffer(buf_id, text) end
 
---- Prints a message to the UI as a toast notification and archives it in the "*Messages*" virtual buffer.
----@param msg string The message to display and log.
-function dot.print(msg) end
+---Moves the cursor to a specific logical position within a given buffer.
+---@param buf_id integer The ID of the target buffer.
+---@param row integer The target row (1-indexed).
+---@param col integer The target column (1-indexed).
+function dot.set_buffer_cursor(buf_id, row, col) end
+
+---Applies a visual style to a specific range of text within a given buffer.
+---@param buf_id integer The ID of the target buffer.
+---@param ns_id integer The namespace ID for the style (e.g., to separate Tree-sitter from Search).
+---@param row integer The row number (1-indexed).
+---@param col integer The starting column (1-indexed).
+---@param length integer The number of characters to color.
+---@param style DotStyle The style definition (fg, bg, bold, italic, underline).
+---@param priority? integer The Z-index priority of the style (higher overwrites lower, default is 50).
+function dot.add_buffer_style(buf_id, ns_id, row, col, length, style, priority) end
+
+---Clears all styles associated with a specific namespace within a given buffer.
+---@param buf_id integer The ID of the target buffer.
+---@param ns_id integer The namespace ID to clear.
+function dot.clear_buffer_style(buf_id, ns_id) end
+
+---@class DebugBuffer
+---@field logical_size integer
+---@field gap_start integer
+---@field gap_end integer
+---@field len integer
+---@field filename string
+
+---@class DebugView
+---@field buf_idx integer
+---@field is_active boolean
+---@field x integer
+---@field y integer
+---@field width integer
+---@field height integer
+---@field is_readonly boolean
+
+---@class DebugInfo
+---@field fps integer
+---@field timestamp integer
+---@field mem_kb integer
+---@field queue_size integer
+---@field buffers DebugBuffer[]
+---@field views DebugView[]
+---@field actions string[]
+
+---Returns comprehensive debugging information about the editor's internal state.
+---@return DebugInfo
+function dot.get_debug_info() end
+
+---Executes a callback function repeatedly at a specified interval.
+---@param interval_ms integer The interval in milliseconds.
+---@param callback function The Lua function to execute.
+function dot.set_interval(interval_ms, callback) end

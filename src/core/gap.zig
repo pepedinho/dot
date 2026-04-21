@@ -35,6 +35,7 @@ pub const GapBuffer = struct {
     extmarks: std.ArrayList(ExMark),
     is_dirty: bool = true,
     ts_tree: ?*anyopaque = null,
+    disable_history: bool = false,
 
     history: HistoryManager,
 
@@ -245,12 +246,13 @@ pub const GapBuffer = struct {
         var y: usize = 1;
 
         for (self.buffer[0..self.gap_start]) |c| {
+            const is_continuation = ((c & 0xC0) == 0x80);
             if (c == '\n') {
                 y += 1;
                 x = 1;
             } else if (c == '\t') {
                 x += TAB_SIZE;
-            } else {
+            } else if (!is_continuation) {
                 x += 1;
             }
         }
@@ -270,14 +272,17 @@ pub const GapBuffer = struct {
         var current_x: usize = 1;
 
         while (target_logical_idx < logical_len) {
-            if (current_y == pos.y and current_x >= pos.x) break;
-
             const physical_idx = if (target_logical_idx < self.gap_start)
                 target_logical_idx
             else
                 target_logical_idx + gap_size;
 
             const c = self.buffer[physical_idx];
+            const is_continuation = ((c & 0xC0) == 0x80);
+
+            if (!is_continuation) {
+                if (current_y == pos.y and current_x >= pos.x) break;
+            }
             if (current_y == pos.y and c == '\n') break;
 
             if (c == '\n') {
@@ -426,15 +431,21 @@ pub const GapBuffer = struct {
         const total_len = self.len();
 
         for (0..total_len) |i| {
-            if (current_row == target_row and current_col >= target_col) return i;
-
             const c = self.charAt(i).?;
+            const is_continuation = ((c & 0xC0) == 0x80);
+
+            if (!is_continuation) {
+                if (current_row == target_row and current_col >= target_col) return i;
+            }
+
             if (c == '\n') {
+                if (current_row == target_row) return i;
+
                 current_row += 1;
                 current_col = 1;
             } else if (c == '\t') {
                 current_col += TAB_SIZE;
-            } else {
+            } else if (!is_continuation) {
                 current_col += 1;
             }
         }

@@ -1,7 +1,7 @@
 //! Core module it contain `Editor` struct which is the interface to interact with the dot editor
 
 const std = @import("std");
-const buffer = @import("gap.zig");
+pub const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
 const keybinds = @import("keybinds.zig");

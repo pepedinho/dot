@@ -303,8 +303,10 @@ pub const Renderer = struct {
                         current_col += 1;
                     }
                 } else {
+                    const is_continuation_byte = (c & 0xC0) == 0x80;
+                    const eval_col = if (is_continuation_byte) current_col - 1 else current_col;
                     if (current_row > view.row_offset) {
-                        if (current_col > view.col_offset and current_col <= view.col_offset + text_width) {
+                        if (eval_col > view.col_offset and eval_col <= view.col_offset + text_width) {
                             var target_style: ?style.Style = null;
                             var current_priority: i32 = -1;
                             var i: usize = view.buf.extmarks.items.len;
@@ -331,7 +333,9 @@ pub const Renderer = struct {
                             try stdout.writeAll(&[_]u8{c});
                         }
                     }
-                    current_col += 1;
+                    if (!is_continuation_byte) {
+                        current_col += 1;
+                    }
                 }
             }
         }
