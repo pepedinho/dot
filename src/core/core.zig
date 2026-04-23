@@ -539,13 +539,22 @@ pub const Editor = struct {
                 const sep = " .(){}[];,";
                 var idw = view.buf.gap_start;
                 const len = view.buf.len();
-                while (std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) != null) {
-                    idw += 1;
+                while (true) {
+                    if (view.buf.charAt(idw)) |ch| {
+                        if (std.mem.indexOfScalar(u8, sep, ch) == null) {
+                            break;
+                        }
+                        idw += 1;
+                    } else break;
                 }
 
-                //BUG: .? is not safe and cause segfault if we press 'w' at the end of file
-                while (idw < len and std.mem.indexOfScalar(u8, sep, view.buf.charAt(idw).?) == null) {
-                    idw += 1;
+                while (idw < len) {
+                    if (view.buf.charAt(idw)) |ch| {
+                        if (std.mem.indexOfScalar(u8, sep, ch) != null) {
+                            break;
+                        }
+                        idw += 1;
+                    }
                 }
                 view.buf.jumpToLogical(idw);
             },
