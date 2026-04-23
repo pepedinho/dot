@@ -1165,6 +1165,10 @@ pub const Editor = struct {
                 \\plugins.setup({
                 \\        cmd_completion = true,
                 \\        cmd_history = true,
+                \\        dashboard = true,
+                \\        lang = true,
+                \\        messages = true,
+                \\        treesitter = true,
                 \\})
             ;
             const init_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path}), .{});
