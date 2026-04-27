@@ -55,7 +55,7 @@ pub const TSManager = struct {
         if (self.dyn_lib) |*lib| lib.close();
     }
 
-    pub fn loadLanguage(self: *TSManager, buf: *gap.GapBuffer, lang_name: []const u8, lib_path: []const u8, query_path: []const u8) !void {
+    pub fn loadLanguage(self: *TSManager, io: std.Io, buf: *gap.GapBuffer, lang_name: []const u8, lib_path: []const u8, query_path: []const u8) !void {
         if (self.dyn_lib) |*lib| lib.close();
         if (self.query) |q| c.ts_query_delete(q);
         errdefer {
@@ -75,15 +75,12 @@ pub const TSManager = struct {
 
         _ = c.ts_parser_set_language(self.parser, lang);
 
-        const query_source = try std.fs.cwd().readFileAlloc(self.allocator, query_path, 1024 * 1024);
+        const query_source = try std.Io.Dir.cwd().readFileAlloc(io, query_path, self.allocator, .unlimited);
         defer self.allocator.free(query_source);
 
         var error_offset: u32 = 0;
         var error_type: c.TSQueryError = undefined;
         self.query = c.ts_query_new(lang, query_source.ptr, @intCast(query_source.len), &error_offset, &error_type) orelse {
-            const file = std.fs.cwd().createFile("ts_error.log", .{}) catch return error.TSQueryFailed;
-            defer file.close();
-            file.deprecatedWriter().print("ERREUR TREE-SITTER SCM\nOffset : {d}\nType : {d}\n(1=Syntaxe, 2=Noeud Invalide, 3=Champ, 4=Capture)\n", .{ error_offset, error_type }) catch {};
             return error.TSQueryFailed;
         };
     }

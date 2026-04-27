@@ -20,7 +20,6 @@ pub const Action = union(enum) {
     CommandBackspace,
     ExecuteCommand,
     ClearCommandBuf,
-    UpdateDebugBuffer: *buffer.GapBuffer,
     NextSearchResult,
     PrevSearchResult,
     YankLine,

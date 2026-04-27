@@ -84,6 +84,8 @@ pub const Window = struct {
 /// the role of this struct is to centralize all vital function of dot editor
 pub const Editor = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+    env: *std.process.Environ.Map,
     buffers: std.ArrayList(*buffer.GapBuffer),
     views: std.ArrayList(pane.View),
     active_view_idx: usize = 0,
@@ -114,7 +116,7 @@ pub const Editor = struct {
     /// Ring buffer to store up 256 `Action`
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
-    scheduler: Scheduler = .{},
+    scheduler: Scheduler,
     /// Render engine used to render text to screen
     renderer: Renderer,
     clipboard: ?[]u8,
@@ -144,13 +146,15 @@ pub const Editor = struct {
     // =======================
     ts_manager: TSManager,
 
-    pub fn init(allocator: std.mem.Allocator) !Editor {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !Editor {
         var binds = std.EnumArray(Mode, std.StringHashMap(Action)).initUndefined();
         for (std.enums.values(Mode)) |m| {
             binds.set(m, std.StringHashMap(Action).init(allocator));
         }
         var ed = Editor{
             .allocator = allocator,
+            .io = io,
+            .env = env,
             .buffers = .empty,
             .mode = .Normal,
             .last_mode = .Normal,
@@ -163,20 +167,21 @@ pub const Editor = struct {
             .pending_keys = .empty,
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
-            .last_fps_time = std.time.milliTimestamp(),
+            .last_fps_time = std.Io.Clock.now(.real, io).toMilliseconds(),
             .renderer = Renderer.init(allocator),
             .clipboard = null,
-            .toast_manager = ToastManager.init(allocator),
+            .toast_manager = ToastManager.init(allocator, io),
             .ghost_manager = GhostManager.init(allocator),
             .pum = PumManager.init(allocator),
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
-            .job_manager = JobManager.init(allocator),
-            .server_manager = ServerManager.init(allocator),
+            .job_manager = JobManager.init(allocator, io),
+            .server_manager = ServerManager.init(allocator, io),
             .ts_manager = try TSManager.init(allocator),
+            .scheduler = .{ .io = io },
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
-        main_buf.* = try buffer.GapBuffer.init(allocator);
+        main_buf.* = try buffer.GapBuffer.init(allocator, io);
         try ed.buffers.append(allocator, main_buf);
         try ed.views.append(ed.allocator, pane.View{
             .x = 1,
@@ -197,7 +202,7 @@ pub const Editor = struct {
         self.bootstrapConfig() catch {};
 
         if (self.vm) |L| {
-            const home = std.posix.getenv("HOME") orelse ".";
+            const home = self.env.get("HOME") orelse ".";
             const init_path = std.fmt.allocPrint(self.allocator, "{s}/.config/dot/init.lua", .{home}) catch return;
             const init_path_c = self.allocator.dupeZ(u8, init_path) catch return;
 
@@ -304,7 +309,7 @@ pub const Editor = struct {
         const view = self.getActiveView();
         switch (action) {
             .Tick => {
-                const now = std.time.milliTimestamp();
+                const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
                 var it = self.pop_store.iterator();
                 var to_remove: std.ArrayList(u32) = .empty;
                 defer to_remove.deinit(self.allocator);
@@ -517,19 +522,6 @@ pub const Editor = struct {
             .ClearCommandBuf => {
                 self.cmd_buf.clearRetainingCapacity();
             },
-            .UpdateDebugBuffer => |debug_buf| {
-                var target_view: ?*pane.View = null;
-                for (self.views.items) |*v| {
-                    if (v.buf == debug_buf) {
-                        target_view = v;
-                        break;
-                    }
-                }
-
-                if (target_view) |v| {
-                    try self.updateDebugPanel(debug_buf, v);
-                }
-            },
             .Undo => {
                 if (view.is_readonly) return;
                 try view.buf.history.undo(view.buf);
@@ -628,8 +620,9 @@ pub const Editor = struct {
     /// Create `Pop` like a .init() but assign id and store it to the pop_store
     pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) !u32 {
         const id = self.next_popup_id;
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
         self.next_popup_id += 1;
-        const popup = pop.Pop.init(self.allocator, id, pos, size, duration_ms);
+        const popup = pop.Pop.init(self.allocator, id, pos, size, duration_ms, now);
         try self.pop_store.put(id, popup);
 
         return id;
@@ -669,13 +662,16 @@ pub const Editor = struct {
         const view = self.getActiveView();
 
         const file = if (std.fs.path.isAbsolute(name))
-            try std.fs.createFileAbsolute(name, .{})
+            try std.Io.Dir.createFileAbsolute(self.io, name, .{})
         else
-            try std.fs.cwd().createFile(name, .{});
-        defer file.close();
+            try std.Io.Dir.cwd().createFile(self.io, name, .{});
+        defer file.close(self.io);
 
-        try file.writeAll(view.buf.getFirst());
-        try file.writeAll(view.buf.getSecond());
+        var writer_buf: [1024]u8 = undefined;
+        var writer = file.writer(self.io, &writer_buf);
+
+        try writer.interface.writeAll(view.buf.getFirst());
+        try writer.interface.writeAll(view.buf.getSecond());
     }
 
     /// Split current window horizontaly in two equal parts
@@ -946,7 +942,7 @@ pub const Editor = struct {
 
             try stdout.flush();
             self.frame_rendered += 1;
-            const now_fps = std.time.milliTimestamp();
+            const now_fps = std.Io.Clock.now(.real, self.io).toMilliseconds();
             if (now_fps - self.last_fps_time >= 1000) {
                 self.last_fps = self.frame_rendered;
                 self.frame_rendered = 0;
@@ -954,7 +950,7 @@ pub const Editor = struct {
             }
             try self.win.updateSize();
             if (key == .none and self.action_queue.count() == 0)
-                std.Thread.sleep(16_000_000);
+                try std.Io.sleep(self.io, std.Io.Duration{ .nanoseconds = 16_000_000 }, .real);
         }
     }
 
@@ -997,65 +993,6 @@ pub const Editor = struct {
         }
     }
 
-    /// Fetch debug infos and format them then inject it in `debug_buf` end render it in `v` view.
-    fn updateDebugPanel(self: *Editor, debug_buf: *buffer.GapBuffer, v: *pane.View) !void {
-        debug_buf.gap_start = 0;
-        debug_buf.gap_end = debug_buf.buffer.len;
-
-        var temp_memory: [4096]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&temp_memory);
-        const w = fbs.writer();
-
-        w.print("=== DEBUG PANEL ===\n\n", .{}) catch {};
-        w.print("FPS       : {d}\n", .{self.last_fps}) catch {};
-        w.print("Mode      : {s}\n\n", .{@tagName(self.mode)}) catch {};
-
-        w.print("--- BUFFERS ({d}) ---\n", .{self.buffers.items.len}) catch {};
-        for (self.buffers.items, 0..) |b, i| {
-            const logical_size = b.buffer.len - (b.gap_end - b.gap_start);
-            w.print("[{d}] Size: {d} bytes | Gap: {d} -> {d}\n", .{ i, logical_size, b.gap_start, b.gap_end }) catch {};
-            w.print("len: {d}\n", .{b.len()}) catch {};
-            w.print("\tfilename -> {s}\n", .{if (b.filename) |f| f else "none"}) catch {};
-        }
-        w.print("\n", .{}) catch {};
-
-        w.print("--- VIEWS ({d}) ---\n", .{self.views.items.len}) catch {};
-        for (self.views.items, 0..) |view_item, i| {
-            var b_idx: usize = 0;
-            for (self.buffers.items, 0..) |b, j| {
-                if (b == view_item.buf) {
-                    b_idx = j;
-                    break;
-                }
-            }
-
-            const active_mark = if (i == self.active_view_idx) "*" else " ";
-            const ro_mark = if (view_item.is_readonly) " [RO]" else "";
-
-            w.print("[{d}]{s} Buf:{d} | Pos:({d},{d}) Size:{d}x{d}{s}\n", .{ i, active_mark, b_idx, view_item.x, view_item.y, view_item.width, view_item.height, ro_mark }) catch {};
-        }
-        w.print("View queue size: {d}\n", .{self.views.items.len}) catch {};
-        w.print("Active view idx: {d}\n", .{self.active_view_idx}) catch {};
-        w.print("\n", .{}) catch {};
-
-        w.print("--- ACTION QUEUE ({d}) ---\n", .{self.action_queue.count()}) catch {};
-        var curr = self.action_queue.tail;
-        var count: usize = 0;
-        while (curr != self.action_queue.head and count < 10) : (curr = (curr + 1) % self.action_queue.buffer.len) {
-            const act = self.action_queue.buffer[curr];
-            w.print("- {s}\n", .{@tagName(std.meta.activeTag(act))}) catch {};
-            count += 1;
-        }
-        if (count == 0) w.print("(empty)\n", .{}) catch {};
-
-        const final_text = fbs.getWritten();
-        for (final_text) |ch| {
-            debug_buf.insertChar(ch) catch {};
-        }
-        v.is_dirty = true;
-        self.is_dirty = true;
-    }
-
     pub fn triggerHook(self: *Editor, hook_name: []const u8) bool {
         const L = self.vm orelse return false;
         var prevent_default = false;
@@ -1081,11 +1018,11 @@ pub const Editor = struct {
     }
 
     fn bootstrapConfig(self: *Editor) !void {
-        const home = std.posix.getenv("HOME") orelse return;
+        const home = self.env.get("HOME") orelse return;
         const config_path = try std.fmt.allocPrint(self.allocator, "{s}/.config/dot", .{home});
         defer self.allocator.free(config_path);
 
-        std.fs.cwd().access(config_path, .{}) catch |err| {
+        std.Io.Dir.cwd().access(self.io, config_path, .{}) catch |err| {
             if (err != error.FileNotFound) return;
 
             var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -1094,16 +1031,17 @@ pub const Editor = struct {
 
             const core_dir = try std.fmt.allocPrint(aa, "{s}/lua/core", .{config_path});
 
-            try std.fs.cwd().makePath(core_dir);
-            try std.fs.cwd().makePath(try std.fmt.allocPrint(aa, "{s}/lua/plugins", .{config_path}));
-            try std.fs.cwd().makePath(try std.fmt.allocPrint(aa, "{s}/.meta", .{config_path}));
+            try std.Io.Dir.cwd().createDirPath(self.io, core_dir);
+            try std.Io.Dir.cwd().createDirPath(self.io, try std.fmt.allocPrint(aa, "{s}/lua/plugins", .{config_path}));
+            try std.Io.Dir.cwd().createDirPath(self.io, try std.fmt.allocPrint(aa, "{s}/.meta", .{config_path}));
 
             const dot_lua_content = @embedFile("../api/dot.lua");
-            const meta_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.meta/dot.lua", .{config_path}), .{});
-            try meta_file.writeAll(dot_lua_content);
-            meta_file.close();
+            const meta_file_path = try std.fmt.allocPrint(aa, "{s}/.meta/dot.lua", .{config_path});
+            const meta_file = try std.Io.Dir.createFileAbsolute(self.io, meta_file_path, .{});
+            try utils.dumpToFile(self.io, meta_file_path, dot_lua_content);
+            meta_file.close(self.io);
 
-            const pwd = std.posix.getenv("PWD") orelse ".";
+            const pwd = self.env.get("PWD") orelse ".";
             const luarc_content = try std.fmt.allocPrint(aa,
                 \\{{
                 \\    "workspace": {{
@@ -1114,9 +1052,10 @@ pub const Editor = struct {
                 \\}}
             , .{pwd});
 
-            const luarc_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.luarc.json", .{config_path}), .{});
-            try luarc_file.writeAll(luarc_content);
-            luarc_file.close();
+            const luarc_file_path = try std.fmt.allocPrint(aa, "{s}/.luarc.json", .{config_path});
+            const luarc_file = try std.Io.Dir.createFileAbsolute(self.io, luarc_file_path, .{});
+            try utils.dumpToFile(self.io, luarc_file_path, luarc_content);
+            luarc_file.close(self.io);
 
             const keymaps_content =
                 \\-- Core Config File
@@ -1140,9 +1079,9 @@ pub const Editor = struct {
                 \\end)
             ;
             const keymaps_path = try std.fmt.allocPrint(aa, "{s}/keymaps.lua", .{core_dir});
-            const keymaps_file = try std.fs.createFileAbsolute(keymaps_path, .{});
-            defer keymaps_file.close();
-            try keymaps_file.writeAll(keymaps_content);
+            const keymaps_file = try std.Io.Dir.createFileAbsolute(self.io, keymaps_path, .{});
+            defer keymaps_file.close(self.io);
+            try utils.dumpToFile(self.io, keymaps_path, keymaps_content);
 
             const cmd_content =
                 \\local cmd = require("dot.commands")
@@ -1153,9 +1092,9 @@ pub const Editor = struct {
             ;
 
             const cmd_path = try std.fmt.allocPrint(aa, "{s}/cmd.lua", .{core_dir});
-            const cmd_file = try std.fs.createFileAbsolute(cmd_path, .{});
-            defer cmd_file.close();
-            try cmd_file.writeAll(cmd_content);
+            const cmd_file = try std.Io.Dir.createFileAbsolute(self.io, cmd_path, .{});
+            defer cmd_file.close(self.io);
+            try utils.dumpToFile(self.io, cmd_path, cmd_content);
 
             const init_content =
                 \\-- Welcome to Dot !
@@ -1171,9 +1110,10 @@ pub const Editor = struct {
                 \\        treesitter = true,
                 \\})
             ;
-            const init_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path}), .{});
-            try init_file.writeAll(init_content);
-            init_file.close();
+            const init_file_path = try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path});
+            const init_file = try std.Io.Dir.createFileAbsolute(self.io, init_file_path, .{});
+            try utils.dumpToFile(self.io, init_file_path, init_content);
+            init_file.close(self.io);
 
             try self.toast_manager.push("Install done !", 3000, .{ .fg = ansi.White, .bg = ansi.Green, .bold = true });
         };
@@ -1198,7 +1138,7 @@ pub const Editor = struct {
 
         if (target_buf == null) {
             const new_buf = self.allocator.create(buffer.GapBuffer) catch return;
-            new_buf.* = buffer.GapBuffer.init(self.allocator) catch return;
+            new_buf.* = buffer.GapBuffer.init(self.allocator, self.io) catch return;
             new_buf.filename = self.allocator.dupe(u8, "*Messages*") catch return;
             self.buffers.append(self.allocator, new_buf) catch return;
             target_buf = new_buf;

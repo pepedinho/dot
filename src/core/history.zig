@@ -19,12 +19,14 @@ pub const Transaction = struct {
 
 pub const HistoryManager = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     undo_stack: std.ArrayList(Transaction),
     current_transaction: ?Transaction,
     last_edit_time: i64,
 
-    pub fn init(allocator: std.mem.Allocator) HistoryManager {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) HistoryManager {
         return .{
+            .io = io,
             .allocator = allocator,
             .undo_stack = .empty,
             .current_transaction = null,
@@ -50,7 +52,7 @@ pub const HistoryManager = struct {
     }
 
     pub fn recordInsert(self: *HistoryManager, pos: usize, char: u8) !void {
-        const now = std.time.milliTimestamp();
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
 
         if (self.current_transaction == null or (now - self.last_edit_time > 1000)) {
             try self.commit();
@@ -74,13 +76,13 @@ pub const HistoryManager = struct {
             try self.current_transaction.?.edits.append(self.allocator, .{ .kind = .insert, .pos = start_pos + i, .char = char });
         }
 
-        self.last_edit_time = std.time.milliTimestamp();
+        self.last_edit_time = std.Io.Clock.now(.real, self.io).toMilliseconds();
 
         try self.commit();
     }
 
     pub fn recordDelete(self: *HistoryManager, pos: usize, char: u8) !void {
-        const now = std.time.milliTimestamp();
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
 
         if (self.current_transaction == null or (now - self.last_edit_time > 1000)) {
             try self.commit();

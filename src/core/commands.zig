@@ -12,20 +12,22 @@ const cmdHandler = *const fn (editor: *Editor, args: []const u8) anyerror!void;
 
 /// A easy to use api to manipul Command map and execute them
 pub const CommandsMap = struct {
-    map: std.StringArrayHashMap(cmdHandler),
+    map: std.StringArrayHashMapUnmanaged(cmdHandler),
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) CommandsMap {
         return .{
-            .map = std.StringArrayHashMap(cmdHandler).init(allocator),
+            .allocator = allocator,
+            .map = std.StringArrayHashMapUnmanaged(cmdHandler){},
         };
     }
 
     pub fn deinit(self: *CommandsMap) void {
-        self.map.deinit();
+        self.map.deinit(self.allocator);
     }
 
     pub fn register(self: *CommandsMap, name: []const u8, func: cmdHandler) !void {
-        try self.map.put(name, func);
+        try self.map.put(self.allocator, name, func);
     }
 
     pub fn execute(self: *CommandsMap, editor: *Editor, name: []const u8, args: []const u8) !bool {
@@ -75,7 +77,7 @@ fn cmdFile(ed: *Editor, args: []const u8) !void {
 fn cmdSplit(ed: *Editor, args: []const u8) !void {
     _ = args;
     const buf = try ed.allocator.create(buffer.GapBuffer);
-    buf.* = try buffer.GapBuffer.init(ed.allocator);
+    buf.* = try buffer.GapBuffer.init(ed.allocator, ed.io);
     try ed.buffers.append(ed.allocator, buf);
     try ed.splitHorizontal(buf);
 }
@@ -83,7 +85,7 @@ fn cmdSplit(ed: *Editor, args: []const u8) !void {
 fn cmdVsplit(ed: *Editor, args: []const u8) !void {
     _ = args;
     const buf = try ed.allocator.create(buffer.GapBuffer);
-    buf.* = try buffer.GapBuffer.init(ed.allocator);
+    buf.* = try buffer.GapBuffer.init(ed.allocator, ed.io);
     try ed.buffers.append(ed.allocator, buf);
     try ed.splitVertical(buf);
 }
@@ -96,7 +98,7 @@ fn cmdGoto(ed: *Editor, args: []const u8) !void {
 }
 
 fn cmdOpen(ed: *Editor, args: []const u8) !void {
-    const content = fs.Fs.loadFast(ed.allocator, args) catch |err| {
+    const content = fs.Fs.loadFast(ed.allocator, ed.io, args) catch |err| {
         try ed.registerPop(null, null, @errorName(err), null);
         return;
     };
@@ -117,7 +119,7 @@ fn cmdOpen(ed: *Editor, args: []const u8) !void {
     }
 
     const new_buf = try ed.allocator.create(buffer.GapBuffer);
-    new_buf.* = try buffer.GapBuffer.initFromFile(ed.allocator, content, args);
+    new_buf.* = try buffer.GapBuffer.initFromFile(ed.allocator, ed.io, content, args);
 
     const view = ed.getActiveView();
     try ed.buffers.append(ed.allocator, new_buf);
@@ -159,31 +161,6 @@ fn cmdBnext(ed: *Editor, args: []const u8) !void {
     view.col_offset = 0;
     view.row_offset = 0;
     ed.needs_redraw = true;
-}
-
-fn cmdDebug(ed: *Editor, args: []const u8) !void {
-    _ = args;
-
-    if (ed.debug_view_idx == null) {
-        const buf = if (ed.debug_buf_idx) |i|
-            ed.buffers.items[i]
-        else blk: {
-            const b = try ed.allocator.create(buffer.GapBuffer);
-            b.* = try buffer.GapBuffer.init(ed.allocator);
-            try ed.buffers.append(ed.allocator, b);
-            ed.debug_buf_idx = ed.buffers.items.len - 1;
-            break :blk b;
-        };
-
-        try ed.splitVertical(buf);
-
-        const new_idx = ed.views.items.len - 1;
-        ed.views.items[new_idx].is_readonly = true;
-        ed.debug_view_idx = new_idx;
-        ed.views.items[new_idx].gutter_width = 0;
-        try ed.scheduler.add(.{ .UpdateDebugBuffer = buf }, 100);
-        ed.needs_redraw = true;
-    }
 }
 
 fn cmdClose(ed: *Editor, args: []const u8) !void {
@@ -228,7 +205,6 @@ pub fn registerBuiltins(map: *CommandsMap) !void {
     try map.register("open", cmdOpen);
     try map.register("bprev", cmdBprev);
     try map.register("bnext", cmdBnext);
-    try map.register("debug", cmdDebug);
     try map.register("close", cmdClose);
     try map.register("source", cmdSource);
 }

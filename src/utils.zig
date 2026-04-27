@@ -33,3 +33,14 @@ pub fn parseKeySequence(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 
     return out.toOwnedSlice(allocator);
 }
+
+pub fn dumpToFile(io: std.Io, path: []const u8, content: []const u8) !void {
+    const file = try std.Io.Dir.createFileAbsolute(io, path, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var writer = file.writer(io, &write_buf);
+
+    try writer.interface.writeAll(content);
+    try writer.interface.flush();
+}

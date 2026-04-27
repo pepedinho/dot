@@ -20,11 +20,12 @@ pub const Job = struct {
 pub const Scheduler = struct {
     /// Fixed pool of 32 possible recurring jobs. Null means the slot is free.
     jobs: [32]?Job = .{null} ** 32,
+    io: std.Io,
 
     /// Registers a new recursing action in the first available slot.
     /// The job will trigger its first execution after `interval_ms` has passed.
     pub fn add(self: *Scheduler, action: Action, interval_ms: i64) !void {
-        const now = std.time.milliTimestamp();
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
         for (&self.jobs) |*slot| {
             if (slot.* == null) {
                 slot.* = .{
@@ -41,7 +42,7 @@ pub const Scheduler = struct {
     /// Evakuate all active jobs against the current timestamp and pushes
     /// ready actions to the provided queue.
     pub fn update(self: *Scheduler, queue: *ActionQueue) !void {
-        const now = std.time.milliTimestamp();
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
         for (&self.jobs) |*slot| {
             if (slot.*) |*job| {
                 var catch_up_limit: usize = 0;

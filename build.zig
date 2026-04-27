@@ -13,8 +13,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.addIncludePath(b.path("vendor/lua/src/"));
-    exe.linkLibC();
+    exe.root_module.addIncludePath(b.path("vendor/lua/src/"));
+    // exe.root_module.linkLibC();
+    exe.root_module.link_libc = true;
 
     const lua_sources = &[_][]const u8{
         "lapi.c",   "lcode.c",    "lctype.c",  "ldebug.c",   "ldo.c",     "ldump.c",    "lfunc.c",    "lgc.c",
@@ -24,16 +25,16 @@ pub fn build(b: *std.Build) void {
     };
 
     for (lua_sources) |file| {
-        exe.addCSourceFile(.{
+        exe.root_module.addCSourceFile(.{
             .file = b.path(b.fmt("vendor/lua/src/{s}", .{file})),
             .flags = &[_][]const u8{ "-std=c99", "-O2" },
         });
     }
 
-    exe.addIncludePath(b.path("vendor/tree-sitter/lib/include"));
-    exe.addIncludePath(b.path("vendor/tree-sitter/lib/src"));
+    exe.root_module.addIncludePath(b.path("vendor/tree-sitter/lib/include"));
+    exe.root_module.addIncludePath(b.path("vendor/tree-sitter/lib/src"));
 
-    exe.addCSourceFile(.{
+    exe.root_module.addCSourceFile(.{
         .file = b.path("vendor/tree-sitter/lib/src/lib.c"),
         .flags = &[_][]const u8{ "-std=gnu11", "-O3" },
     });
