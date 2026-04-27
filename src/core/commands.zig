@@ -12,20 +12,22 @@ const cmdHandler = *const fn (editor: *Editor, args: []const u8) anyerror!void;
 
 /// A easy to use api to manipul Command map and execute them
 pub const CommandsMap = struct {
-    map: std.StringArrayHashMap(cmdHandler),
+    map: std.StringArrayHashMapUnmanaged(cmdHandler),
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) CommandsMap {
         return .{
-            .map = std.StringArrayHashMap(cmdHandler).init(allocator),
+            .allocator = allocator,
+            .map = std.StringArrayHashMapUnmanaged(cmdHandler){},
         };
     }
 
     pub fn deinit(self: *CommandsMap) void {
-        self.map.deinit();
+        self.map.deinit(self.allocator);
     }
 
     pub fn register(self: *CommandsMap, name: []const u8, func: cmdHandler) !void {
-        try self.map.put(name, func);
+        try self.map.put(self.allocator, name, func);
     }
 
     pub fn execute(self: *CommandsMap, editor: *Editor, name: []const u8, args: []const u8) !bool {
@@ -75,7 +77,7 @@ fn cmdFile(ed: *Editor, args: []const u8) !void {
 fn cmdSplit(ed: *Editor, args: []const u8) !void {
     _ = args;
     const buf = try ed.allocator.create(buffer.GapBuffer);
-    buf.* = try buffer.GapBuffer.init(ed.allocator);
+    buf.* = try buffer.GapBuffer.init(ed.allocator, ed.io);
     try ed.buffers.append(ed.allocator, buf);
     try ed.splitHorizontal(buf);
 }

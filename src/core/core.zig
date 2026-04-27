@@ -84,6 +84,8 @@ pub const Window = struct {
 /// the role of this struct is to centralize all vital function of dot editor
 pub const Editor = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+    env: *std.process.Environ.Map,
     buffers: std.ArrayList(*buffer.GapBuffer),
     views: std.ArrayList(pane.View),
     active_view_idx: usize = 0,
@@ -114,7 +116,7 @@ pub const Editor = struct {
     /// Ring buffer to store up 256 `Action`
     action_queue: ActionQueue = .{},
     /// Used to assign reccurent action to scheduler
-    scheduler: Scheduler = .{},
+    scheduler: Scheduler,
     /// Render engine used to render text to screen
     renderer: Renderer,
     clipboard: ?[]u8,
@@ -144,13 +146,15 @@ pub const Editor = struct {
     // =======================
     ts_manager: TSManager,
 
-    pub fn init(allocator: std.mem.Allocator) !Editor {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !Editor {
         var binds = std.EnumArray(Mode, std.StringHashMap(Action)).initUndefined();
         for (std.enums.values(Mode)) |m| {
             binds.set(m, std.StringHashMap(Action).init(allocator));
         }
         var ed = Editor{
             .allocator = allocator,
+            .io = io,
+            .env = env,
             .buffers = .empty,
             .mode = .Normal,
             .last_mode = .Normal,
@@ -163,20 +167,21 @@ pub const Editor = struct {
             .pending_keys = .empty,
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
-            .last_fps_time = std.time.milliTimestamp(),
+            .last_fps_time = std.Io.Clock.now(.real, io).toMilliseconds(),
             .renderer = Renderer.init(allocator),
             .clipboard = null,
-            .toast_manager = ToastManager.init(allocator),
+            .toast_manager = ToastManager.init(allocator, io),
             .ghost_manager = GhostManager.init(allocator),
             .pum = PumManager.init(allocator),
             .hooks = std.StringHashMap(std.ArrayList(c_int)).init(allocator),
             .job_manager = JobManager.init(allocator),
             .server_manager = ServerManager.init(allocator),
             .ts_manager = try TSManager.init(allocator),
+            .scheduler = .{ .io = io },
         };
 
         const main_buf = try allocator.create(buffer.GapBuffer);
-        main_buf.* = try buffer.GapBuffer.init(allocator);
+        main_buf.* = try buffer.GapBuffer.init(allocator, io);
         try ed.buffers.append(allocator, main_buf);
         try ed.views.append(ed.allocator, pane.View{
             .x = 1,
@@ -628,8 +633,9 @@ pub const Editor = struct {
     /// Create `Pop` like a .init() but assign id and store it to the pop_store
     pub fn createPop(self: *Editor, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) !u32 {
         const id = self.next_popup_id;
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
         self.next_popup_id += 1;
-        const popup = pop.Pop.init(self.allocator, id, pos, size, duration_ms);
+        const popup = pop.Pop.init(self.allocator, id, pos, size, duration_ms, now);
         try self.pop_store.put(id, popup);
 
         return id;
@@ -669,13 +675,16 @@ pub const Editor = struct {
         const view = self.getActiveView();
 
         const file = if (std.fs.path.isAbsolute(name))
-            try std.fs.createFileAbsolute(name, .{})
+            try std.Io.Dir.createFileAbsolute(self.io, name, .{})
         else
-            try std.fs.cwd().createFile(name, .{});
-        defer file.close();
+            try std.Io.Dir.cwd().createFile(self.io, name, .{});
+        defer file.close(self.io);
 
-        try file.writeAll(view.buf.getFirst());
-        try file.writeAll(view.buf.getSecond());
+        var writer_buf: [1024]u8 = undefined;
+        var writer = file.writer(self.io, &writer_buf);
+
+        try writer.interface.writeAll(view.buf.getFirst());
+        try writer.interface.writeAll(view.buf.getSecond());
     }
 
     /// Split current window horizontaly in two equal parts
@@ -1099,7 +1108,7 @@ pub const Editor = struct {
             try std.fs.cwd().makePath(try std.fmt.allocPrint(aa, "{s}/.meta", .{config_path}));
 
             const dot_lua_content = @embedFile("../api/dot.lua");
-            const meta_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.meta/dot.lua", .{config_path}), .{});
+            const meta_file = try std.Io.Dir.createFileAbsolute(self.io, try std.fmt.allocPrint(aa, "{s}/.meta/dot.lua", .{config_path}), .{});
             try meta_file.writeAll(dot_lua_content);
             meta_file.close();
 
@@ -1114,7 +1123,7 @@ pub const Editor = struct {
                 \\}}
             , .{pwd});
 
-            const luarc_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/.luarc.json", .{config_path}), .{});
+            const luarc_file = try std.Io.Dir.createFileAbsolute(self.io, try std.fmt.allocPrint(aa, "{s}/.luarc.json", .{config_path}), .{});
             try luarc_file.writeAll(luarc_content);
             luarc_file.close();
 
@@ -1140,7 +1149,7 @@ pub const Editor = struct {
                 \\end)
             ;
             const keymaps_path = try std.fmt.allocPrint(aa, "{s}/keymaps.lua", .{core_dir});
-            const keymaps_file = try std.fs.createFileAbsolute(keymaps_path, .{});
+            const keymaps_file = try std.Io.Dir.createFileAbsolute(self.io, keymaps_path, .{});
             defer keymaps_file.close();
             try keymaps_file.writeAll(keymaps_content);
 
@@ -1153,7 +1162,7 @@ pub const Editor = struct {
             ;
 
             const cmd_path = try std.fmt.allocPrint(aa, "{s}/cmd.lua", .{core_dir});
-            const cmd_file = try std.fs.createFileAbsolute(cmd_path, .{});
+            const cmd_file = try std.Io.Dir.createFileAbsolute(self.io, cmd_path, .{});
             defer cmd_file.close();
             try cmd_file.writeAll(cmd_content);
 
@@ -1171,7 +1180,7 @@ pub const Editor = struct {
                 \\        treesitter = true,
                 \\})
             ;
-            const init_file = try std.fs.createFileAbsolute(try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path}), .{});
+            const init_file = try std.Io.Dir.createFileAbsolute(self.io, try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path}), .{});
             try init_file.writeAll(init_content);
             init_file.close();
 
@@ -1198,7 +1207,7 @@ pub const Editor = struct {
 
         if (target_buf == null) {
             const new_buf = self.allocator.create(buffer.GapBuffer) catch return;
-            new_buf.* = buffer.GapBuffer.init(self.allocator) catch return;
+            new_buf.* = buffer.GapBuffer.init(self.allocator, self.io) catch return;
             new_buf.filename = self.allocator.dupe(u8, "*Messages*") catch return;
             self.buffers.append(self.allocator, new_buf) catch return;
             target_buf = new_buf;

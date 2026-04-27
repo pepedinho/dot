@@ -13,7 +13,7 @@ pub const JobResult = struct {
 
 pub const JobManager = struct {
     allocator: std.mem.Allocator,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
     completed_jobs: std.ArrayList(JobResult),
 
     pub fn init(allocator: std.mem.Allocator) JobManager {
@@ -35,9 +35,9 @@ pub const JobManager = struct {
         self.completed_jobs.deinit(self.allocator);
     }
 
-    pub fn pushResult(self: *JobManager, result: JobResult) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+    pub fn pushResult(self: *JobManager, io: std.Io, result: JobResult) void {
+        self.mutex.lock(io) catch return;
+        defer self.mutex.unlock(io);
         self.completed_jobs.append(self.allocator, result) catch {};
     }
 
@@ -73,26 +73,27 @@ pub const ServerManager = struct {
     }
 };
 
-pub fn serverReaderThread(job_mgr: *JobManager, allocator: std.mem.Allocator, child: *std.process.Child, ref_id: c_int) void {
+pub fn serverReaderThread(job_mgr: *JobManager, allocator: std.mem.Allocator, io: std.Io, child: *std.process.Child, ref_id: c_int) void {
     const stdout_file = child.stdout orelse return;
     var buf: [4096]u8 = undefined;
+    var stdout_reader = stdout_file.reader(io, &buf);
 
     while (true) {
-        const bytes_read = stdout_file.read(&buf) catch 0;
+        const bytes_read = stdout_reader.interface.readSliceShort(&buf) catch 0;
         if (bytes_read == 0) break;
 
         const output_copy = allocator.dupe(u8, buf[0..bytes_read]) catch continue;
-        job_mgr.pushResult(.{
+        job_mgr.pushResult(io, .{
             .ref_id = ref_id,
             .output = output_copy,
             .success = true,
             .is_server_msg = true,
         });
     }
-    _ = child.wait() catch {};
+    _ = child.wait(io) catch {};
 }
 
-pub fn workerThread(job_mgr: *JobManager, allocator: std.mem.Allocator, cmd: []const u8, ref_id: c_int) void {
+pub fn workerThread(job_mgr: *JobManager, allocator: std.mem.Allocator, io: std.Io, cmd: []const u8, ref_id: c_int) void {
     defer allocator.free(cmd);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -106,23 +107,23 @@ pub fn workerThread(job_mgr: *JobManager, allocator: std.mem.Allocator, cmd: []c
     }
 
     if (args.items.len == 0) {
-        job_mgr.pushResult(.{ .ref_id = ref_id, .output = null, .success = false });
+        job_mgr.pushResult(io, .{ .ref_id = ref_id, .output = null, .success = false });
         return;
     }
 
-    const result = std.process.Child.run(.{
-        .allocator = arena_alloc,
+    const options = std.process.RunOptions{
         .argv = args.items,
-        .max_output_bytes = 10 * 1024 * 1024,
-    }) catch {
-        job_mgr.pushResult(.{ .ref_id = ref_id, .output = null, .success = false });
+        .stdout_limit = .unlimited,
+    };
+    const result = std.process.run(allocator, io, options) catch {
+        job_mgr.pushResult(io, .{ .ref_id = ref_id, .output = null, .success = false });
         return;
     };
 
     const output_copy = allocator.dupe(u8, result.stdout) catch null;
     const success = result.term == .Exited and result.term.Exited == 0;
 
-    job_mgr.pushResult(.{
+    job_mgr.pushResult(io, .{
         .ref_id = ref_id,
         .output = output_copy,
         .success = success,

@@ -128,8 +128,8 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
 
     c.lua_setglobal(L, "dot");
 
-    const home = std.posix.getenv("HOME") orelse ".";
-    const pwd = std.posix.getenv("PWD") orelse ".";
+    const home = editor.env.get("HOME") orelse ".";
+    const pwd = editor.env.get("PWD") orelse ".";
 
     const lua_path_setup = std.fmt.allocPrint(editor.allocator,
         \\package.path = package.path .. 
@@ -503,16 +503,16 @@ export fn api_read_dir(L: ?*c.lua_State) c_int {
     c.lua_newtable(L);
 
     var dir = if (std.fs.path.isAbsolute(target))
-        std.fs.openDirAbsolute(target, .{ .iterate = true }) catch return 1
+        std.Io.Dir.openDirAbsolute(editor.io, target, .{ .iterate = true }) catch return 1
     else
-        std.fs.cwd().openDir(target, .{ .iterate = true }) catch return 1;
+        std.Io.Dir.cwd().openDir(editor.io, target, .{ .iterate = true }) catch return 1;
 
-    defer dir.close();
+    defer dir.close(editor.io);
 
     var it = dir.iterate();
     var index: c_int = 1;
 
-    while (it.next() catch null) |entry| {
+    while (it.next(editor.io) catch null) |entry| {
         if (entry.kind == .directory) {
             const dir_name = std.fmt.allocPrint(editor.allocator, "{s}/", .{entry.name}) catch continue;
             defer editor.allocator.free(dir_name);
@@ -619,7 +619,7 @@ export fn api_spawn(L: ?*c.lua_State) c_int {
 
     const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
 
-    const thread = std.Thread.spawn(.{}, job.workerThread, .{ &editor.job_manager, editor.allocator, cmd_copy, ref_id }) catch {
+    const thread = std.Thread.spawn(.{}, job.workerThread, .{ &editor.job_manager, editor.allocator, editor.io, cmd_copy, ref_id }) catch {
         editor.allocator.free(cmd_copy);
         c.luaL_unref(L, c.LUA_REGISTRYINDEX, ref_id);
         return 0;
@@ -657,12 +657,28 @@ export fn api_start_server(L: ?*c.lua_State) c_int {
         return 0;
     };
 
-    child.* = std.process.Child.init(args.items, editor.allocator);
-    child.stdin_behavior = .Pipe;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
+    // child.* = std.process.Child.init(args.items, editor.allocator);
+    // child.* = std.process.Child{
+    //     .allocator = editor.allocator,
+    //     .argv = args.items,
+    // };
+    // child.stdin_behavior = .Pipe;
+    // child.stdout_behavior = .Pipe;
+    // child.stderr_behavior = .Ignore;
 
-    child.spawn() catch {
+    const options = std.process.SpawnOptions{
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .ignore,
+        .argv = args.items,
+    };
+
+    // child.spawn() catch {
+    //     editor.allocator.destroy(child);
+    //     arena.deinit();
+    //     return 0;
+    // };
+    child.* = std.process.spawn(editor.io, options) catch {
         editor.allocator.destroy(child);
         arena.deinit();
         return 0;
@@ -676,8 +692,8 @@ export fn api_start_server(L: ?*c.lua_State) c_int {
 
     const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
 
-    const thread = std.Thread.spawn(.{}, job.serverReaderThread, .{ &editor.job_manager, editor.allocator, child, ref_id }) catch {
-        _ = child.kill() catch {};
+    const thread = std.Thread.spawn(.{}, job.serverReaderThread, .{ &editor.job_manager, editor.allocator, editor.io, child, ref_id }) catch {
+        child.kill(editor.io);
         return 0;
     };
     thread.detach();
@@ -694,7 +710,9 @@ export fn api_server_send(L: ?*c.lua_State) c_int {
 
     if (editor.server_manager.servers.get(server_id)) |child| {
         if (child.stdin) |stdin| {
-            stdin.writeAll(msg) catch {};
+            var pipe_buf: [1024]u8 = undefined;
+            var pipe_writer = stdin.writer(editor.io, &pipe_buf);
+            pipe_writer.interface.writeAll(msg) catch {};
         }
     }
 
@@ -882,7 +900,7 @@ export fn api_ts_load_language(L: ?*c.lua_State) c_int {
     const lib_path = std.mem.span(lib_path_ptr);
     const query_path = std.mem.span(query_path_ptr);
 
-    editor.ts_manager.loadLanguage(view.buf, lang_name, lib_path, query_path) catch |err| {
+    editor.ts_manager.loadLanguage(editor.io, view.buf, lang_name, lib_path, query_path) catch |err| {
         const err_msg = std.fmt.allocPrint(editor.allocator, "TS Load Error: {s}", .{@errorName(err)}) catch return 0;
         defer editor.allocator.free(err_msg);
         editor.toastNotify(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
@@ -920,7 +938,7 @@ export fn api_create_buffer(L: ?*c.lua_State) c_int {
     const filename = std.mem.span(name_ptr);
 
     const new_buf = editor.allocator.create(gap.GapBuffer) catch return 0;
-    new_buf.* = gap.GapBuffer.init(editor.allocator) catch return 0;
+    new_buf.* = gap.GapBuffer.init(editor.allocator, editor.io) catch return 0;
 
     new_buf.filename = editor.allocator.dupe(u8, filename) catch return 0;
     if (filename.len > 0 and filename[0] == '*') {
@@ -1084,7 +1102,7 @@ export fn api_get_debug_info(L: ?*c.lua_State) c_int {
     c.lua_pushinteger(L, @intCast(editor.last_fps));
     c.lua_setfield(L, -2, "fps");
 
-    c.lua_pushinteger(L, @intCast(std.time.milliTimestamp()));
+    c.lua_pushinteger(L, @intCast(std.Io.Clock.now(.real, editor.io).toMilliseconds()));
     c.lua_setfield(L, -2, "timestamp");
 
     var total_mem: usize = 0;

@@ -10,10 +10,11 @@ const Toast = struct {
 
 pub const ToastManager = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     toasts: std.ArrayList(Toast),
 
-    pub fn init(allocator: std.mem.Allocator) ToastManager {
-        return .{ .allocator = allocator, .toasts = .empty };
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) ToastManager {
+        return .{ .allocator = allocator, .io = io, .toasts = .empty };
     }
 
     pub fn deinit(self: *ToastManager) void {
@@ -24,10 +25,11 @@ pub const ToastManager = struct {
     pub fn push(self: *ToastManager, text: []const u8, duration_ms: i64, theme: style.Style) !void {
         const padded_text = try std.fmt.allocPrint(self.allocator, " {s} ", .{text});
         errdefer self.allocator.free(padded_text);
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
 
         try self.toasts.append(self.allocator, .{
             .text = padded_text,
-            .expire_at = std.time.milliTimestamp() + duration_ms,
+            .expire_at = now + duration_ms,
             .theme = theme,
         });
     }

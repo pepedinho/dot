@@ -43,7 +43,7 @@ pub const GapBuffer = struct {
 
     /// Initializes an empty Gap Buffer with an initial capacity.
     /// The gap spans the entire buffer initially.
-    pub fn init(allocator: std.mem.Allocator) !GapBuffer {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) !GapBuffer {
         const buf = try allocator.alloc(u8, INITIAL_CAPACITY);
         @memset(buf, 0);
         return GapBuffer{
@@ -53,7 +53,7 @@ pub const GapBuffer = struct {
             .gap_end = buf.len,
             .filename = null,
             .extmarks = .empty,
-            .history = HistoryManager.init(allocator),
+            .history = HistoryManager.init(allocator, io),
         };
     }
 
