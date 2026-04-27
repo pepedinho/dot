@@ -24,17 +24,17 @@ pub fn main(init: std.process.Init) !void {
     dot.startLua();
     try dot.loadStandardKeyBinds();
 
-    var args = try std.process.argsWithAllocator(allocator);
-    defer args.deinit();
-    _ = args.next();
-    if (args.next()) |filename| {
+    var args = init.minimal.args;
+    var args_it = args.iterate();
+    _ = args_it.next();
+    if (args_it.next()) |filename| {
         try dot.loadFile(filename);
 
-        if (Fs.loadFast(dot.allocator, filename)) |file_content| {
+        if (Fs.loadFast(dot.allocator, init.io, filename)) |file_content| {
             defer allocator.free(file_content);
             const active_buf = dot.getActiveView().buf;
             active_buf.deinit();
-            active_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, file_content, filename);
+            active_buf.* = try buffer.GapBuffer.initFromFile(dot.allocator, init.io, file_content, filename);
             _ = dot.triggerHook("BufInit");
         } else |err| {
             if (err != error.FileNotFound) {

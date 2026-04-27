@@ -83,7 +83,7 @@ pub const GapBuffer = struct {
     /// Note: This function creates its own internal copy of `filename`.
     /// The caller retains ownership of the passed `filename` argument and is
     /// responsible for freeing it if it was dynamically allocated.
-    pub fn initFromFile(allocator: std.mem.Allocator, text: []const u8, filename: []const u8) !GapBuffer {
+    pub fn initFromFile(allocator: std.mem.Allocator, io: std.Io, text: []const u8, filename: []const u8) !GapBuffer {
         const total_capacity = text.len + INITIAL_CAPACITY;
         const name = try allocator.dupe(u8, filename);
         errdefer allocator.free(name);
@@ -99,7 +99,7 @@ pub const GapBuffer = struct {
             .gap_end = total_capacity,
             .filename = name,
             .extmarks = .empty,
-            .history = HistoryManager.init(allocator),
+            .history = HistoryManager.init(allocator, io),
         };
     }
 

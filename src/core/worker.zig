@@ -12,21 +12,23 @@ pub const JobResult = struct {
 };
 
 pub const JobManager = struct {
+    io: std.Io,
     allocator: std.mem.Allocator,
     mutex: std.Io.Mutex,
     completed_jobs: std.ArrayList(JobResult),
 
-    pub fn init(allocator: std.mem.Allocator) JobManager {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) JobManager {
         return .{
+            .io = io,
             .allocator = allocator,
-            .mutex = .{},
+            .mutex = std.Io.Mutex.init,
             .completed_jobs = .empty,
         };
     }
 
     pub fn deinit(self: *JobManager) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io) catch {};
+        defer self.mutex.unlock(self.io);
         for (self.completed_jobs.items) |j| {
             if (j.output) |out| {
                 self.allocator.free(out);
@@ -35,27 +37,29 @@ pub const JobManager = struct {
         self.completed_jobs.deinit(self.allocator);
     }
 
-    pub fn pushResult(self: *JobManager, io: std.Io, result: JobResult) void {
-        self.mutex.lock(io) catch return;
-        defer self.mutex.unlock(io);
+    pub fn pushResult(self: *JobManager, result: JobResult) void {
+        self.mutex.lock(self.io) catch return;
+        defer self.mutex.unlock(self.io);
         self.completed_jobs.append(self.allocator, result) catch {};
     }
 
     pub fn popResult(self: *JobManager) ?JobResult {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io) catch return null;
+        defer self.mutex.unlock(self.io);
         if (self.completed_jobs.items.len == 0) return null;
         return self.completed_jobs.orderedRemove(0);
     }
 };
 
 pub const ServerManager = struct {
+    io: std.Io,
     allocator: std.mem.Allocator,
     servers: std.AutoHashMap(u32, *std.process.Child),
     next_id: u32 = 1,
 
-    pub fn init(allocator: std.mem.Allocator) ServerManager {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) ServerManager {
         return .{
+            .io = io,
             .allocator = allocator,
             .servers = std.AutoHashMap(u32, *std.process.Child).init(allocator),
         };
@@ -66,7 +70,7 @@ pub const ServerManager = struct {
         while (it.next()) |child_ptr| {
             const child = child_ptr.*;
             // _ = child.kill() catch {};
-            if (child.stdin) |*in| in.close();
+            if (child.stdin) |*in| in.close(self.io);
             self.allocator.destroy(child);
         }
         self.servers.deinit();
@@ -83,7 +87,7 @@ pub fn serverReaderThread(job_mgr: *JobManager, allocator: std.mem.Allocator, io
         if (bytes_read == 0) break;
 
         const output_copy = allocator.dupe(u8, buf[0..bytes_read]) catch continue;
-        job_mgr.pushResult(io, .{
+        job_mgr.pushResult(.{
             .ref_id = ref_id,
             .output = output_copy,
             .success = true,
@@ -107,7 +111,7 @@ pub fn workerThread(job_mgr: *JobManager, allocator: std.mem.Allocator, io: std.
     }
 
     if (args.items.len == 0) {
-        job_mgr.pushResult(io, .{ .ref_id = ref_id, .output = null, .success = false });
+        job_mgr.pushResult(.{ .ref_id = ref_id, .output = null, .success = false });
         return;
     }
 
@@ -116,14 +120,14 @@ pub fn workerThread(job_mgr: *JobManager, allocator: std.mem.Allocator, io: std.
         .stdout_limit = .unlimited,
     };
     const result = std.process.run(allocator, io, options) catch {
-        job_mgr.pushResult(io, .{ .ref_id = ref_id, .output = null, .success = false });
+        job_mgr.pushResult(.{ .ref_id = ref_id, .output = null, .success = false });
         return;
     };
 
     const output_copy = allocator.dupe(u8, result.stdout) catch null;
-    const success = result.term == .Exited and result.term.Exited == 0;
+    const success = result.term == .exited and result.term.exited == 0;
 
-    job_mgr.pushResult(io, .{
+    job_mgr.pushResult(.{
         .ref_id = ref_id,
         .output = output_copy,
         .success = success,

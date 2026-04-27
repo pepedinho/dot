@@ -75,7 +75,7 @@ pub const TSManager = struct {
 
         _ = c.ts_parser_set_language(self.parser, lang);
 
-        const query_source = try std.Io.Dir.cwd().readFileAlloc(io, query_path, self.allocator, .nothing);
+        const query_source = try std.Io.Dir.cwd().readFileAlloc(io, query_path, self.allocator, .unlimited);
         defer self.allocator.free(query_source);
 
         var error_offset: u32 = 0;

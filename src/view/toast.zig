@@ -35,7 +35,7 @@ pub const ToastManager = struct {
     }
 
     pub fn tick(self: *ToastManager) bool {
-        const now = std.time.milliTimestamp();
+        const now = std.Io.Clock.now(.real, self.io).toMilliseconds();
         var need_redraws = false;
 
         var i: usize = 0;
