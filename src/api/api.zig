@@ -692,6 +692,7 @@ export fn api_start_server(L: ?*c.lua_State) c_int {
 
     const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
 
+    editor.toastNotify("before run the thread", 3000, .{}) catch {};
     const thread = std.Thread.spawn(.{}, job.serverReaderThread, .{ &editor.job_manager, editor.allocator, editor.io, child, ref_id }) catch {
         child.kill(editor.io);
         return 0;

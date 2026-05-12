@@ -1,4 +1,5 @@
 const std = @import("std");
+const core = @import("../core/core.zig");
 
 pub const JobResult = struct {
     /// Lua function ID
@@ -79,14 +80,14 @@ pub const ServerManager = struct {
 
 pub fn serverReaderThread(job_mgr: *JobManager, allocator: std.mem.Allocator, io: std.Io, child: *std.process.Child, ref_id: c_int) void {
     const stdout_file = child.stdout orelse return;
-    var buf: [4096]u8 = undefined;
-    var stdout_reader = stdout_file.reader(io, &buf);
+    var r_buf: [4096]u8 = undefined;
+    var iovecs: [1][]u8 = .{r_buf[0..]};
 
     while (true) {
-        const bytes_read = stdout_reader.interface.readSliceShort(&buf) catch 0;
+        const bytes_read = stdout_file.readStreaming(io, &iovecs) catch 0;
         if (bytes_read == 0) break;
 
-        const output_copy = allocator.dupe(u8, buf[0..bytes_read]) catch continue;
+        const output_copy = allocator.dupe(u8, r_buf[0..bytes_read]) catch continue;
         job_mgr.pushResult(.{
             .ref_id = ref_id,
             .output = output_copy,

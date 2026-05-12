@@ -150,6 +150,7 @@ zls_id = dot.start_server(zls_path, function(success, chunk)
 end)
 
 if zls_id and zls_id > 0 then
+	dot.print("zls id : " .. zls_id)
 	local root_uri = "file://" .. pwd
 	local caps = '{"textDocument":{"publishDiagnostics":{"relatedInformation":true}}}'
 
