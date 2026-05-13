@@ -56,7 +56,7 @@ end
 
 dot.hook_on("BufInit", update_tree)
 dot.hook_on("BufOpen", update_tree)
-local cmd = require("dot.commands")
+local cmd = require("dot.core.commands")
 cmd.create("ts", update_tree)
 
 return M

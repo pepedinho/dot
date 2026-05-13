@@ -1,5 +1,7 @@
 local M = {}
-local cmd = require("dot.commands")
+local cmd = require("dot.core.commands")
+local log = require("dot.std.log")
+local buf = require("dot.std.buf")
 
 local function sh(c)
 	if not c or c == "" then
@@ -10,10 +12,18 @@ local function sh(c)
 	-- dot.print("debug: " .. line)
 	dot.spawn(c, function(success, output)
 		if not success then
-			dot.print("cmd failed !")
+			log.error("Command failed")
+		else
+			log.success("Command finished")
 		end
-		dot.print(output)
+
+		if output and output ~= "" then
+			buf.append_virtual("*Shell Output*", "\n--- " .. c .. " ---")
+			buf.append_virtual("*Shell Output*", output)
+		end
 	end)
 end
 
 cmd.create("sh", sh)
+
+-- return M
