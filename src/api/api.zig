@@ -714,6 +714,7 @@ export fn api_server_send(L: ?*c.lua_State) c_int {
             var pipe_buf: [1024]u8 = undefined;
             var pipe_writer = stdin.writer(editor.io, &pipe_buf);
             pipe_writer.interface.writeAll(msg) catch {};
+            pipe_writer.flush() catch {};
         }
     }
 
