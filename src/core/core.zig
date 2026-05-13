@@ -654,6 +654,8 @@ pub const Editor = struct {
     pub fn saveFile(self: *Editor) !void {
         if (self.triggerHook("BufWritePre")) return;
 
+        try self.toastNotify("file saved !", 3000, .{});
+
         const current_buf_idx = self.getCurrentBufferIdx();
         const buf = self.buffers.items[current_buf_idx];
         const name = buf.filename orelse {
@@ -672,6 +674,7 @@ pub const Editor = struct {
 
         try writer.interface.writeAll(view.buf.getFirst());
         try writer.interface.writeAll(view.buf.getSecond());
+        try writer.flush();
     }
 
     /// Split current window horizontaly in two equal parts
