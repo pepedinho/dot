@@ -18,10 +18,12 @@ dot = {}
 ---@field bold? boolean
 ---@field italic? boolean
 ---@field underline? boolean
+---@field duration? integer Duration in milliseconds (used for toasts)
 
 ---Displays a temporary notification (Toast) in the bottom right corner of the screen.
 ---@param message string The notification text to display.
-function dot.print(message) end
+---@param style? DotStyle (Optional) Visual theme and duration of the toast.
+function dot.print(message, style) end
 
 ---Inserts text at the current logical cursor position.
 ---Multiple consecutive insertions are grouped in the history for Undo functionality.

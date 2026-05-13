@@ -152,11 +152,34 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
 
 export fn api_print(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
-
     const str_ptr = c.luaL_checklstring(L, 1, null);
     const message = std.mem.span(str_ptr);
 
-    editor.toastNotify(message, 3000, .{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true }) catch {};
+    var theme = style.Style{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true };
+    var duration: u32 = 3000;
+
+    if (c.lua_istable(L, 2)) {
+        c.lua_pushvalue(L, 2);
+
+        theme.fg = parseLuaColor(L, "fg");
+        theme.bg = parseLuaColor(L, "bg");
+
+        _ = c.lua_getfield(L, -1, "italic");
+        theme.italic = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "bold");
+        theme.bold = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "duration");
+        if (c.lua_isinteger(L, -1) != 0)
+            duration = @as(u32, @intCast(c.lua_tointegerx(L, -1, null)));
+
+        c.lua_pop(L, 1);
+        c.lua_pop(L, 1);
+    }
+    editor.toastNotify(message, duration, theme) catch {};
     editor.needs_redraw = true;
     return 0;
 }
