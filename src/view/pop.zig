@@ -15,9 +15,9 @@ pub const Pop = struct {
     border_color: []const u8 = "\x1b[37m",
     expire_at: ?i64,
 
-    pub fn init(allocator: std.mem.Allocator, id: u32, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64) Pop {
+    pub fn init(allocator: std.mem.Allocator, id: u32, pos: utils.Pos, size: utils.Pos, duration_ms: ?i64, now: i64) Pop {
         const buffer: std.ArrayList(u8) = .empty;
-        const expires = if (duration_ms) |ms| std.time.milliTimestamp() + ms else null;
+        const expires = if (duration_ms) |ms| now + ms else null;
 
         return .{
             .allocator = allocator,
