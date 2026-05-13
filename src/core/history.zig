@@ -40,6 +40,14 @@ pub const HistoryManager = struct {
         self.undo_stack.deinit(self.allocator);
     }
 
+    pub fn clear(self: *HistoryManager) void {
+        self.undo_stack.clearRetainingCapacity();
+        if (self.current_transaction) |*t| {
+            t.deinit(self.allocator);
+        }
+        self.current_transaction = null;
+    }
+
     pub fn commit(self: *HistoryManager) !void {
         if (self.current_transaction) |*t| {
             if (t.edits.items.len > 0) {

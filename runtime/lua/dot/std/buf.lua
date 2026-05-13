@@ -25,4 +25,11 @@ function M.open_virtual_hsplit(name)
 	end
 end
 
+function M.clear_virtual(name)
+	local buf_id = dot.get_buffer_by_name(name)
+	if buf_id then
+		dot.clear_buffer(buf_id)
+	end
+end
+
 return M

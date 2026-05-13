@@ -125,6 +125,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "clear_buffer_style", api_clear_buffer_style);
     registerFn(L, "get_debug_info", api_get_debug_info);
     registerFn(L, "set_interval", api_set_interval);
+    registerFn(L, "clear_buffer", api_clear_buffer);
 
     c.lua_setglobal(L, "dot");
 
@@ -974,6 +975,18 @@ export fn api_create_buffer(L: ?*c.lua_State) c_int {
 
     const buf_id = editor.buffers.items.len - 1;
     c.lua_pushinteger(L, @intCast(buf_id));
+    return 1;
+}
+
+export fn api_clear_buffer(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const target_buf = editor.buffers.items[buf_id];
+    target_buf.clear();
     return 1;
 }
 

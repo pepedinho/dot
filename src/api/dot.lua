@@ -181,6 +181,10 @@ function dot.ts_load_language(name, lib, query) end
 ---@return integer buf_id The unique ID (index) of the newly created buffer.
 function dot.create_buffer(name) end
 
+--- Clear buffer content
+--- @param buf_id integer The Buffer ID
+function dot.clear_buffer(buf_id) end
+
 --- Searches the editor's active buffers for one matching the given name.
 ---@param name string The name or virtual filename to search for.
 ---@return integer|nil buf_id The ID of the buffer if found, otherwise `nil`.

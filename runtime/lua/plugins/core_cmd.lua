@@ -18,6 +18,7 @@ local function sh(c)
 		end
 
 		if output and output ~= "" then
+			buf.clear_virtual("*Shell Output*")
 			buf.append_virtual("*Shell Output*", "\n--- " .. c .. " ---")
 			buf.append_virtual("*Shell Output*", output)
 		end

@@ -130,6 +130,17 @@ pub const GapBuffer = struct {
         if (self.ts_tree) |tree| api.c.ts_tree_delete(@as(?*api.c.TSTree, @ptrCast(@alignCast(tree))));
     }
 
+    /// Clear the gap buffer and resize it to minimal size
+    pub fn clear(self: *GapBuffer) void {
+        self.gap_start = 0;
+        self.gap_end = self.buffer.len;
+
+        self.extmarks.clearRetainingCapacity();
+        self.history.clear();
+
+        self.is_dirty = true;
+    }
+
     pub fn clearMarksByNamespace(self: *GapBuffer, ns_id: u32) void {
         var keep_idx: usize = 0;
         for (self.extmarks.items) |mark| {
