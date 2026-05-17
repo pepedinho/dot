@@ -1,0 +1,15 @@
+{
+    "runtime": {
+        "version": "Lua 5.4"
+    },
+    "workspace": {
+        "library": [
+            "src/api",
+            "runtime/lua"
+        ],
+        "checkThirdParty": false
+    },
+    "diagnostics": {
+        "globals": ["dot"]
+    }
+}

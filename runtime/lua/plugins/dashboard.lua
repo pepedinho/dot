@@ -1,6 +1,6 @@
 ---@meta dot.dashboard
 local M = {}
-local cmd = require("dot.commands")
+local cmd = require("dot.core.commands")
 local ui = require("dot.ui")
 
 local DASHBOARD_NS = 42

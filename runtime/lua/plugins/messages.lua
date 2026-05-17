@@ -1,17 +1,18 @@
 local M = {}
-local cmd = require("dot.commands")
+local cmd = require("dot.core.commands")
+local buf = require("dot.std.buf")
 
 local function open_messages()
-	local buf_id = dot.get_buffer_by_name("*Messages*")
+	local buf_id = buf.open_virtual_hsplit("*Messages*")
 	if not buf_id then
 		dot.print("no messages found")
 		return
 	end
-
-	dot.hsplit()
-	dot.set_view_buffer(buf_id)
 end
 
 cmd.create("messages", open_messages)
+cmd.create("shell", function()
+	buf.open_virtual_hsplit("*Shell Output*")
+end)
 
 return M

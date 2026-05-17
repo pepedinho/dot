@@ -18,10 +18,12 @@ dot = {}
 ---@field bold? boolean
 ---@field italic? boolean
 ---@field underline? boolean
+---@field duration? integer Duration in milliseconds (used for toasts)
 
 ---Displays a temporary notification (Toast) in the bottom right corner of the screen.
 ---@param message string The notification text to display.
-function dot.print(message) end
+---@param style? DotStyle (Optional) Visual theme and duration of the toast.
+function dot.print(message, style) end
 
 ---Inserts text at the current logical cursor position.
 ---Multiple consecutive insertions are grouped in the history for Undo functionality.
@@ -178,6 +180,10 @@ function dot.ts_load_language(name, lib, query) end
 ---@param name string The name or virtual filename of the new buffer.
 ---@return integer buf_id The unique ID (index) of the newly created buffer.
 function dot.create_buffer(name) end
+
+--- Clear buffer content
+--- @param buf_id integer The Buffer ID
+function dot.clear_buffer(buf_id) end
 
 --- Searches the editor's active buffers for one matching the given name.
 ---@param name string The name or virtual filename to search for.

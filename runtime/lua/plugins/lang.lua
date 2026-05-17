@@ -86,7 +86,7 @@ rm -rf %s
 	end)
 end
 
-local cmd = require("dot.commands")
+local cmd = require("dot.core.commands")
 cmd.create("lang-install", ts_install)
 
 return M

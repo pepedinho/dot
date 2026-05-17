@@ -1,4 +1,4 @@
-local cmd_lib = require("dot.commands")
+local cmd_lib = require("dot.core.commands")
 
 local State = {
 	is_open = false,

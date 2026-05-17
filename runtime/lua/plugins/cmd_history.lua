@@ -1,4 +1,4 @@
-local cmd_lib = require("dot.commands")
+local cmd_lib = require("dot.core.commands")
 local index = 1
 
 dot.print("cmds_history loaded ! ")

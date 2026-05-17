@@ -1032,9 +1032,6 @@ pub const Editor = struct {
             defer arena.deinit();
             const aa = arena.allocator();
 
-            const core_dir = try std.fmt.allocPrint(aa, "{s}/lua/core", .{config_path});
-
-            try std.Io.Dir.cwd().createDirPath(self.io, core_dir);
             try std.Io.Dir.cwd().createDirPath(self.io, try std.fmt.allocPrint(aa, "{s}/lua/plugins", .{config_path}));
             try std.Io.Dir.cwd().createDirPath(self.io, try std.fmt.allocPrint(aa, "{s}/.meta", .{config_path}));
 
@@ -1060,58 +1057,48 @@ pub const Editor = struct {
             try utils.dumpToFile(self.io, luarc_file_path, luarc_content);
             luarc_file.close(self.io);
 
-            const keymaps_content =
-                \\-- Core Config File
-                \\dot.print("Core loaded !")
-                \\local keymaps = require("dot.keymaps")
+            const init_content =
+                \\-- ==========================================
+                \\-- Welcome to Dot Configuration !
+                \\-- ==========================================
+                \\
+                \\local keymaps = require("dot.core.keymaps")
+                \\local plugins = require("dot.core.plugin_manager")
+                \\local log = require("dot.std.log")
+                \\
+                \\-- 1. Custom Keymaps
                 \\keymaps.set("n", "<C-s>", function()
                 \\        dot.save_current_file()
-                \\        dot.print("File saved !")
+                \\        log.success("File saved !")
                 \\end)
+                \\
                 \\keymaps.set("n", "dd", function()
                 \\        local cursor = dot.get_cursor()
                 \\        local row = cursor[1]
                 \\        dot.set_lines(row, row, {})
-                \\        dot.print("line " .. row .. "deleted")
                 \\end)
+                \\
                 \\keymaps.set("n", "gg", function()
                 \\        dot.jump_to(0)
                 \\end)
+                \\
                 \\keymaps.set("n", "G", function()
                 \\        dot.jump_to(9999999)
                 \\end)
-            ;
-            const keymaps_path = try std.fmt.allocPrint(aa, "{s}/keymaps.lua", .{core_dir});
-            const keymaps_file = try std.Io.Dir.createFileAbsolute(self.io, keymaps_path, .{});
-            defer keymaps_file.close(self.io);
-            try utils.dumpToFile(self.io, keymaps_path, keymaps_content);
-
-            const cmd_content =
-                \\local cmd = require("dot.commands")
-                \\function oui()
-                \\        dot.print("oui")
-                \\end
-                \\cmd.create("oui", oui)
-            ;
-
-            const cmd_path = try std.fmt.allocPrint(aa, "{s}/cmd.lua", .{core_dir});
-            const cmd_file = try std.Io.Dir.createFileAbsolute(self.io, cmd_path, .{});
-            defer cmd_file.close(self.io);
-            try utils.dumpToFile(self.io, cmd_path, cmd_content);
-
-            const init_content =
-                \\-- Welcome to Dot !
-                \\require("core.keymaps")
-                \\require("core.cmd")
-                \\local plugins = require("dot.plugin_manager")
+                \\
+                \\-- 2. Built-in Plugins
                 \\plugins.setup({
                 \\        cmd_completion = true,
                 \\        cmd_history = true,
                 \\        dashboard = true,
                 \\        lang = true,
+                \\        lsp = true,
                 \\        messages = true,
+                \\        core_cmd = true,
                 \\        treesitter = true,
                 \\})
+                \\
+                \\log.info("Dot is ready.")
             ;
             const init_file_path = try std.fmt.allocPrint(aa, "{s}/init.lua", .{config_path});
             const init_file = try std.Io.Dir.createFileAbsolute(self.io, init_file_path, .{});

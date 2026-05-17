@@ -125,6 +125,7 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "clear_buffer_style", api_clear_buffer_style);
     registerFn(L, "get_debug_info", api_get_debug_info);
     registerFn(L, "set_interval", api_set_interval);
+    registerFn(L, "clear_buffer", api_clear_buffer);
 
     c.lua_setglobal(L, "dot");
 
@@ -152,11 +153,34 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
 
 export fn api_print(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
-
     const str_ptr = c.luaL_checklstring(L, 1, null);
     const message = std.mem.span(str_ptr);
 
-    editor.toastNotify(message, 3000, .{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true }) catch {};
+    var theme = style.Style{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true };
+    var duration: u32 = 3000;
+
+    if (c.lua_istable(L, 2)) {
+        c.lua_pushvalue(L, 2);
+
+        theme.fg = parseLuaColor(L, "fg");
+        theme.bg = parseLuaColor(L, "bg");
+
+        _ = c.lua_getfield(L, -1, "italic");
+        theme.italic = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "bold");
+        theme.bold = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+
+        _ = c.lua_getfield(L, -1, "duration");
+        if (c.lua_isinteger(L, -1) != 0)
+            duration = @as(u32, @intCast(c.lua_tointegerx(L, -1, null)));
+
+        c.lua_pop(L, 1);
+        c.lua_pop(L, 1);
+    }
+    editor.toastNotify(message, duration, theme) catch {};
     editor.needs_redraw = true;
     return 0;
 }
@@ -951,6 +975,18 @@ export fn api_create_buffer(L: ?*c.lua_State) c_int {
 
     const buf_id = editor.buffers.items.len - 1;
     c.lua_pushinteger(L, @intCast(buf_id));
+    return 1;
+}
+
+export fn api_clear_buffer(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const target_buf = editor.buffers.items[buf_id];
+    target_buf.clear();
     return 1;
 }
 
