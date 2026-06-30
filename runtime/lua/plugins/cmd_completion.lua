@@ -83,12 +83,13 @@ local function get_file_completions(cmd_type, type_path)
 	return matches, base_prefix
 end
 
-dot.hook_on("CmdTab", function()
+local function handle_tab(direction)
 	local input = dot.get_cmdline()
 
 	if State.is_open then
 		if State.prev_input == input then
-			State.selected_index = (State.selected_index + 1) % #State.matches
+			State.selected_index = (State.selected_index + direction + #State.matches) % #State.matches
+
 			local win = dot.get_win_size()
 			dot.show_pum(string.len(input) + State.offset, win[1] - 1, State.matches, State.selected_index)
 			return true
@@ -100,7 +101,6 @@ dot.hook_on("CmdTab", function()
 
 	local matches = {}
 	local base_prefix = ""
-
 	local cmd_type, type_path = string.match(input, "^(%w+)%s+(.*)$")
 
 	if cmd_type and (cmd_type == "open" or cmd_type == "source") then
@@ -124,12 +124,21 @@ dot.hook_on("CmdTab", function()
 	State.prev_input = input
 	State.is_open = true
 	State.matches = matches
-	State.selected_index = 0
+
+	State.selected_index = (direction > 0) and 0 or (#matches - 1)
 	State.base_prefix = base_prefix
 
 	local win = dot.get_win_size()
 	dot.show_pum(string.len(input) + State.offset, win[1] - 1, State.matches, State.selected_index)
 	return true
+end
+
+dot.hook_on("CmdTab", function()
+	return handle_tab(1)
+end)
+
+dot.hook_on("CmdSTab", function()
+	return handle_tab(-1)
 end)
 
 dot.hook_on("CmdEnter", function()

@@ -6,6 +6,7 @@ pub const Key = union(enum) {
     down,
     right,
     left,
+    shift_tab,
     backspace,
     enter,
     escape,
@@ -38,6 +39,7 @@ pub fn readKey() !Key {
                 'B' => return .down,
                 'C' => return .right,
                 'D' => return .left,
+                'Z' => return .shift_tab,
                 else => return .escape,
             }
         }

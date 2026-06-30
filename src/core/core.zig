@@ -863,6 +863,9 @@ pub const Editor = struct {
                                 if (!self.triggerHook("CmdEnter"))
                                     try self.pushAction(.ExecuteCommand);
                             },
+                            .shift_tab => {
+                                _ = self.triggerHook("CmdSTab");
+                            },
                             .up => {
                                 _ = self.triggerHook("Up");
                             },
