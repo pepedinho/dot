@@ -13,6 +13,12 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const zui_dep = b.dependency("zui", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("zui", zui_dep.module("zui"));
+
     exe.root_module.addIncludePath(b.path("vendor/lua/src/"));
     // exe.root_module.linkLibC();
     exe.root_module.link_libc = true;

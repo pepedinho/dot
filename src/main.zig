@@ -3,10 +3,13 @@ const buffer = @import("core/gap.zig");
 const terminal = @import("view/terminal.zig");
 const keyboard = @import("view/keyboard.zig");
 const utils = @import("utils.zig");
+const core = @import("core/core.zig");
 const Editor = @import("core/core.zig").Editor;
 const Action = @import("core/core.zig").Action;
 const PopBuilder = @import("core/core.zig").PopBuilder;
 const Fs = @import("fs/filesystem.zig").Fs;
+const zui = @import("zui");
+const ui = @import("view/ui.zig");
 
 pub fn main(init: std.process.Init) !void {
     try terminal.enableRawMode();
@@ -18,6 +21,10 @@ pub fn main(init: std.process.Init) !void {
     var stdout_writer = std.Io.File.stdout().writer(init.io, &stoudt_buf);
     const stdout = &stdout_writer.interface;
     try terminal.openAlternateScreen(stdout);
+
+    const winsize = try core.Window.init();
+    var term = try zui.terminal.Terminal.init(allocator, stdout, winsize.cols, winsize.rows);
+    defer term.deinit();
 
     var dot = try Editor.init(allocator, init.io, init.environ_map);
     defer dot.deinit();
@@ -42,6 +49,6 @@ pub fn main(init: std.process.Init) !void {
             }
         }
     }
-    try dot.run(stdout);
+    try dot.run(&term);
     try terminal.closeAlternateScreen(stdout);
 }

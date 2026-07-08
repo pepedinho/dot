@@ -1,6 +1,8 @@
 //! Core module it contain `Editor` struct which is the interface to interact with the dot editor
 
 const std = @import("std");
+const zui = @import("zui");
+const ui = @import("../view/ui.zig");
 pub const buffer = @import("gap.zig");
 const pop = @import("../view/pop.zig");
 const utils = @import("../utils.zig");
@@ -118,7 +120,7 @@ pub const Editor = struct {
     /// Used to assign reccurent action to scheduler
     scheduler: Scheduler,
     /// Render engine used to render text to screen
-    renderer: Renderer,
+    // renderer: Renderer,
     clipboard: ?[]u8,
     pum: PumManager,
     // ========================
@@ -168,7 +170,7 @@ pub const Editor = struct {
             .cmd_map = CommandsMap.init(allocator),
             .views = .empty,
             .last_fps_time = std.Io.Clock.now(.real, io).toMilliseconds(),
-            .renderer = Renderer.init(allocator),
+            // .renderer = Renderer.init(allocator),
             .clipboard = null,
             .toast_manager = ToastManager.init(allocator, io),
             .ghost_manager = GhostManager.init(allocator),
@@ -254,7 +256,7 @@ pub const Editor = struct {
             self.allocator.destroy(b);
         }
 
-        self.renderer.deinit();
+        // self.renderer.deinit();
         self.buffers.deinit(self.allocator);
         self.pop_store.deinit();
         for (&self.key_binds.values) |*mm| {
@@ -314,9 +316,9 @@ pub const Editor = struct {
                 var to_remove: std.ArrayList(u32) = .empty;
                 defer to_remove.deinit(self.allocator);
 
-                const need_anim_redraw = self.renderer.tickAnimations();
-                if (need_anim_redraw)
-                    self.is_dirty = true;
+                // const need_anim_redraw = self.renderer.tickAnimations();
+                // if (need_anim_redraw)
+                //     self.is_dirty = true;
 
                 while (it.next()) |entry| {
                     if (entry.value_ptr.expire_at) |expiration| {
@@ -774,7 +776,7 @@ pub const Editor = struct {
     /// - read user input
     /// - draw screen
     /// - update scheduler
-    pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
+    pub fn run(self: *Editor, term: *zui.terminal.Terminal) !void {
         while (self.is_running) {
             const key = try keyboard.readKey();
             try self.scheduler.update(&self.action_queue);
@@ -889,64 +891,78 @@ pub const Editor = struct {
             while (self.action_queue.pop()) |act| {
                 try self.execute(act);
             }
-            if (self.is_dirty) {
-                var active = self.getActiveView();
 
-                if (active.scroll()) {
-                    self.needs_redraw = true;
-                }
-                var has_dirty_views = false;
-                for (self.views.items, 0..) |v, i| {
-                    if (v.is_dirty) has_dirty_views = true;
-                    var buffer_already_processed = false;
-                    for (self.views.items[0..i]) |prev| {
-                        if (prev.buf == v.buf) {
-                            buffer_already_processed = true;
-                            break;
-                        }
-                    }
-                    if (buffer_already_processed) continue;
-                    if (v.buf.is_dirty or self.needs_redraw) {
-                        var start_row = v.row_offset + 1;
-                        var end_row = v.row_offset + v.height + 2;
-                        for (self.views.items[i + 1 ..]) |other| {
-                            if (other.buf == v.buf) {
-                                start_row = @min(start_row, other.row_offset + 1);
-                                end_row = @max(end_row, other.row_offset + other.height + 2);
-                            }
-                        }
-                        self.ts_manager.parse(v.buf);
-                        const start_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(start_row, 1)));
-                        const end_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(end_row, 1)));
-                        self.ts_manager.highlight(v.buf, start_byte, end_byte);
-                        v.buf.is_dirty = false;
-                    }
-                }
+            if (self.is_dirty or self.needs_redraw) {
+                try self.win.updateSize();
+                term.current_buffer.width = self.win.cols;
+                term.current_buffer.height = self.win.rows;
+                term.next_buffer.width = self.win.cols;
+                term.next_buffer.height = self.win.rows;
 
-                // self.ts_manager.parse(active.buf);
-                // const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
-                // const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
-                // self.ts_manager.highlight(active.buf, start_byte, end_byte);
-                // active.buf.is_dirty = false;
+                try term.draw(self, ui.renderEditor);
 
-                if (self.needs_redraw) {
-                    // try ui.refreshScreen(stdout, self);
-                    try self.renderer.refreshScreen(self, stdout);
-                    self.needs_redraw = false;
-                } else {
-                    if (has_dirty_views) {
-                        try self.renderer.refreshDirtyViews(self, stdout);
-                    } else {
-                        try self.renderer.updateCurrentLine(self, stdout);
-                    }
-                }
+                self.needs_redraw = false;
                 self.is_dirty = false;
+                for (self.views.items) |*v| v.is_dirty = false;
             }
 
-            if (self.renderer.active_animations.items.len > 0)
-                try self.renderer.refreshAnimationsOnly(stdout, self);
+            // if (self.is_dirty) {
+            //     var active = self.getActiveView();
+            //
+            //     if (active.scroll()) {
+            //         self.needs_redraw = true;
+            //     }
+            //     var has_dirty_views = false;
+            //     for (self.views.items, 0..) |v, i| {
+            //         if (v.is_dirty) has_dirty_views = true;
+            //         var buffer_already_processed = false;
+            //         for (self.views.items[0..i]) |prev| {
+            //             if (prev.buf == v.buf) {
+            //                 buffer_already_processed = true;
+            //                 break;
+            //             }
+            //         }
+            //         if (buffer_already_processed) continue;
+            //         if (v.buf.is_dirty or self.needs_redraw) {
+            //             var start_row = v.row_offset + 1;
+            //             var end_row = v.row_offset + v.height + 2;
+            //             for (self.views.items[i + 1 ..]) |other| {
+            //                 if (other.buf == v.buf) {
+            //                     start_row = @min(start_row, other.row_offset + 1);
+            //                     end_row = @max(end_row, other.row_offset + other.height + 2);
+            //                 }
+            //             }
+            //             self.ts_manager.parse(v.buf);
+            //             const start_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(start_row, 1)));
+            //             const end_byte = @as(u32, @intCast(v.buf.getLogicalFromRowCol(end_row, 1)));
+            //             self.ts_manager.highlight(v.buf, start_byte, end_byte);
+            //             v.buf.is_dirty = false;
+            //         }
+            //     }
+            //
+            //     // self.ts_manager.parse(active.buf);
+            //     // const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
+            //     // const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
+            //     // self.ts_manager.highlight(active.buf, start_byte, end_byte);
+            //     // active.buf.is_dirty = false;
+            //
+            //     if (self.needs_redraw) {
+            //         // try ui.refreshScreen(stdout, self);
+            //         try self.renderer.refreshScreen(self, stdout);
+            //         self.needs_redraw = false;
+            //     } else {
+            //         if (has_dirty_views) {
+            //             try self.renderer.refreshDirtyViews(self, stdout);
+            //         } else {
+            //             try self.renderer.updateCurrentLine(self, stdout);
+            //         }
+            //     }
+            //     self.is_dirty = false;
+            // }
+            //
+            // if (self.renderer.active_animations.items.len > 0)
+            //     try self.renderer.refreshAnimationsOnly(stdout, self);
 
-            try stdout.flush();
             self.frame_rendered += 1;
             const now_fps = std.Io.Clock.now(.real, self.io).toMilliseconds();
             if (now_fps - self.last_fps_time >= 1000) {

@@ -462,4 +462,14 @@ pub const GapBuffer = struct {
         }
         return total_len;
     }
+
+    pub fn getLine(self: *const GapBuffer, allocator: std.mem.Allocator, row: usize) ![]u8 {
+        const start_idx = self.getLogicalFromRowCol(row + 1, 1);
+
+        if (start_idx >= self.len()) return try allocator.alloc(u8, 0);
+
+        const bounds = self.getLineBounds(start_idx);
+
+        return try self.getLogicalRange(allocator, bounds.start, bounds.end);
+    }
 };
