@@ -33,8 +33,8 @@
     // internet connectivity.
     .dependencies = .{
         .zui = .{
-            .url = "git+https://github.com/pepedinho/zui.git#dd854a9539792f7fd8a03a0f59bdb3c4513e7dfd",
-            .hash = "zui-0.0.0-hwVaOVzAAADgBxK9PkFN-onzOStCl-ZK1erayCkBpfrF",
+            .url = "git+https://github.com/pepedinho/zui.git#9a777ee64b243389b61a510d8494ce927bc8e64a",
+            .hash = "zui-0.0.0-hwVaOZDAAABObJzS43TxdMdH33zrLt5wUDUEdNeGGHD3",
         },
     },
     .paths = .{

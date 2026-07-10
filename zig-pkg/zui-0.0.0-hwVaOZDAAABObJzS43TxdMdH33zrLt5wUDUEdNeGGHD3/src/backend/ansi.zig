@@ -8,7 +8,7 @@ const style_mod = @import("../style.zig");
 const Color = style_mod.Color;
 const Modifier = style_mod.Modifier;
 
-pub const ESC = "\x1B[";
+pub const ESC = "\x1b[";
 
 // =======================
 // ANSI CODE GENERATOR

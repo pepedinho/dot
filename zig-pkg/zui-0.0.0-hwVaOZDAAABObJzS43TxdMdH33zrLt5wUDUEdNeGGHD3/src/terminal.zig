@@ -10,6 +10,11 @@ const Cell = buffer.Cell;
 const ansi = @import("backend/ansi.zig");
 const Rect = @import("layout.zig").Rect;
 
+pub const Pos = struct {
+    x: u16,
+    y: u16,
+};
+
 pub const Frame = struct {
     const Self = @This();
 
@@ -21,7 +26,7 @@ pub const Frame = struct {
     buffer: *Buffer,
 
     /// Used to place cursor at the end of a frame.
-    cursor_position: ?struct { x: u16, y: u16 } = null,
+    cursor_position: ?Pos = null,
 
     /// Return the full usable area of the terminal screen.
     pub fn size(self: Self) Rect {
@@ -92,17 +97,11 @@ pub const Terminal = struct {
 
         renderFn(ctx, &frame);
 
-        if (frame.cursor_position) |pos| {
-            try ansi.writeMoveCursor(self.writer, pos.x, pos.y);
-            try ansi.writeShowCursor(self.writer);
-        } else {
-            try ansi.writeHideCursor(self.writer);
-        }
-        try self.flush();
+        try self.flush(frame.cursor_position);
     }
 
     /// The diffing engine: compares next_buffer with current_buffer an prints ANSI codes.
-    fn flush(self: *Self) !void {
+    fn flush(self: *Self, cursor: ?Pos) !void {
         var cursor_x: ?u16 = null;
         var cursor_y: ?u16 = null;
         var current_style: ?@import("style.zig").Style = null;
@@ -138,6 +137,13 @@ pub const Terminal = struct {
                     cursor_y = y;
                 }
             }
+        }
+
+        if (cursor) |pos| {
+            try ansi.writeMoveCursor(self.writer, pos.x, pos.y);
+            try ansi.writeShowCursor(self.writer);
+        } else {
+            try ansi.writeHideCursor(self.writer);
         }
 
         try self.writer.flush();

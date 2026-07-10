@@ -1,4 +1,6 @@
 const gap = @import("gap.zig");
+const zui = @import("zui");
+const Rect = zui.Rect;
 
 /// A `View` represent a rectangular viewport on the terminal screen.
 /// It act as a 'camera' looking into a specific `GapBuffer`.
@@ -56,5 +58,23 @@ pub const View = struct {
         }
 
         return camera_moved;
+    }
+
+    pub fn getGutterArea(self: *const View) Rect {
+        return .{
+            .x = self.x,
+            .y = self.y,
+            .width = self.gutter_width,
+            .height = self.height,
+        };
+    }
+
+    pub fn getTextArea(self: *const View) Rect {
+        return .{
+            .x = self.x + self.gutter_width,
+            .y = self.y,
+            .width = self.width - self.gutter_width,
+            .height = self.height,
+        };
     }
 };

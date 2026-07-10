@@ -777,6 +777,8 @@ pub const Editor = struct {
     /// - draw screen
     /// - update scheduler
     pub fn run(self: *Editor, term: *zui.terminal.Terminal) !void {
+        // try term.draw(self, ui.renderEditor);
+
         while (self.is_running) {
             const key = try keyboard.readKey();
             try self.scheduler.update(&self.action_queue);
@@ -899,7 +901,7 @@ pub const Editor = struct {
                 term.next_buffer.width = self.win.cols;
                 term.next_buffer.height = self.win.rows;
 
-                try term.draw(self, ui.renderEditor);
+                try term.draw(self, ui.renderSimple);
 
                 self.needs_redraw = false;
                 self.is_dirty = false;
