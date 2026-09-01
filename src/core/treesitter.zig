@@ -1,7 +1,7 @@
 const std = @import("std");
 const gap = @import("gap.zig");
 const api = @import("../api/api.zig");
-const ansi = @import("../view/ansi.zig");
+const style = @import("../view/style.zig");
 const c = api.c;
 
 extern fn tree_sitter_zig() callconv(.c) *c.TSLanguage;
@@ -151,49 +151,49 @@ pub const TSManager = struct {
             const name = name_ptr[0..length];
 
             // TODO :  make this color mapping scriptable by Lua
-            var color = ansi.Default;
+            var color: style.Color = .Reset;
             var italic = false;
             var bold = false;
 
             if (std.mem.eql(u8, name, "keyword")) {
-                color = ansi.Magenta;
+                color = .Magenta;
                 bold = true;
             } else if (std.mem.eql(u8, name, "function")) {
-                color = ansi.Blue;
+                color = .Blue;
             } else if (std.mem.eql(u8, name, "type.qualifier")) {
-                color = ansi.Magenta;
-                color = .{ .Rgb = .{ .r = 153, .g = 153, .b = 255 } };
+                color = .Magenta;
+                color = .{ .RGB = .{ .r = 153, .g = 153, .b = 255 } };
             } else if (std.mem.eql(u8, name, "builtin")) {
-                color = ansi.Cyan;
+                color = .Cyan;
             } else if (std.mem.eql(u8, name, "string")) {
-                color = ansi.Green;
+                color = .Green;
             } else if (std.mem.eql(u8, name, "number")) {
-                color = ansi.Yellow;
+                color = .Yellow;
             } else if (std.mem.eql(u8, name, "type")) {
-                color = ansi.Yellow;
+                color = .Yellow;
                 italic = true;
                 bold = true;
             } else if (std.mem.eql(u8, name, "constant")) {
-                color = ansi.Yellow;
+                color = .Yellow;
                 bold = true;
             } else if (std.mem.eql(u8, name, "property")) {
-                color = .{ .Index = 117 };
+                color = .{ .ANSI = 117 };
             } else if (std.mem.eql(u8, name, "operator")) {
-                color = ansi.Red;
+                color = .Red;
             } else if (std.mem.eql(u8, name, "variable")) {
-                color = ansi.Default;
+                color = .Reset;
             } else if (std.mem.eql(u8, name, "variable.parameter")) {
-                color = ansi.Red;
+                color = .Red;
                 italic = true;
             } else if (std.mem.eql(u8, name, "comment")) {
-                color = .{ .Index = 242 };
+                color = .{ .ANSI = 242 };
                 italic = true;
             }
 
             buf.extmarks.append(buf.allocator, .{
                 .logical_start = s_byte,
                 .logical_end = e_byte,
-                .style = .{ .fg = color, .italic = italic, .bold = bold },
+                .style = .{ .fg = color, .add_modifier = .{ .italic = italic, .bold = bold } },
                 .ns_id = gap.NS_TREESITTER,
                 .priority = 0,
             }) catch {};

@@ -42,44 +42,6 @@ pub const Pop = struct {
     }
 };
 
-pub fn render(stdout: *std.Io.Writer, pop: *const Pop) !void {
-    const x = pop.pos.x;
-    const y = pop.pos.y;
-    const w = pop.size.x;
-    const h = pop.size.y;
-
-    try stdout.writeAll("\x1b[?25l");
-    try stdout.print("\x1b[{d};{d}H┌", .{ y, x });
-    for (0..w - 2) |_| try stdout.writeAll("─");
-    try stdout.writeAll("┐");
-
-    for (1..h - 1) |i| {
-        try stdout.print("\x1b[{d};{d}H│", .{ y + i, x });
-        for (0..w - 2) |_| try stdout.writeAll(" ");
-        try stdout.writeAll("│");
-    }
-
-    try stdout.print("\x1b[{d};{d}H└", .{ y + h - 1, x });
-    for (0..w - 2) |_| try stdout.writeAll("─");
-    try stdout.writeAll("┘");
-
-    var lines = std.mem.splitScalar(u8, pop.buffer.items, '\n');
-    var row_offset: usize = 1;
-
-    const inner_w = w - 2;
-    while (lines.next()) |line| {
-        if (row_offset >= h - 1) break;
-
-        const display_len = @min(line.len, w - 2);
-        const left_padding = (inner_w - display_len) / 2;
-        const start_x = x + 1 + left_padding;
-
-        try stdout.print("\x1b[{d};{d}H{s}", .{ y + row_offset, start_x, line[0..display_len] });
-        row_offset += 1;
-    }
-    try stdout.writeAll("\x1b[?25h"); // display cursor
-}
-
 //This function display a pop window of size `size` at pos `pos`
 // pub fn pop(stdout: *std.Io.Writer, editor: *Editor, size: utils.Pos, pos: utils.Pos) !void {
 

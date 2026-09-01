@@ -1,7 +1,6 @@
 const std = @import("std");
 const utils = @import("../utils.zig");
 const style = @import("../view/style.zig");
-const ansi = @import("../view/ansi.zig");
 const HistoryManager = @import("history.zig").HistoryManager;
 const api = @import("../api/api.zig");
 
@@ -64,7 +63,7 @@ pub const GapBuffer = struct {
         var i: usize = 0;
         const part1 = self.getFirst();
         while (std.mem.indexOfPos(u8, part1, i, query)) |pos| {
-            try self.extmarks.append(self.allocator, .{ .ns_id = NS_SEARCH, .priority = 1, .logical_start = pos, .logical_end = pos + query.len, .style = .{ .bg = ansi.Magenta } });
+            try self.extmarks.append(self.allocator, .{ .ns_id = NS_SEARCH, .priority = 1, .logical_start = pos, .logical_end = pos + query.len, .style = .{ .bg = .Magenta } });
             i = pos + query.len;
         }
 
@@ -72,7 +71,7 @@ pub const GapBuffer = struct {
         const part2 = self.getSecond();
         while (std.mem.indexOfPos(u8, part2, i, query)) |pos| {
             const logical_pos = self.gap_start + pos;
-            try self.extmarks.append(self.allocator, .{ .ns_id = NS_SEARCH, .priority = 1, .logical_start = logical_pos, .logical_end = logical_pos + query.len, .style = .{ .bg = ansi.Magenta } });
+            try self.extmarks.append(self.allocator, .{ .ns_id = NS_SEARCH, .priority = 1, .logical_start = logical_pos, .logical_end = logical_pos + query.len, .style = .{ .bg = .Magenta } });
             i = pos + query.len;
         }
     }

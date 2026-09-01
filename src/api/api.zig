@@ -2,7 +2,6 @@ const std = @import("std");
 const core = @import("../core/core.zig");
 const style = @import("../view/style.zig");
 const job = @import("../core/worker.zig");
-const ansi = @import("../view/ansi.zig");
 const utils = @import("../utils.zig");
 const gap = @import("../core/gap.zig");
 
@@ -20,19 +19,19 @@ fn parseLuaColor(L: ?*c.lua_State, field_name: [:0]const u8) style.Color {
     defer c.lua_pop(L, 1);
 
     if (c.lua_type(L, -1) == c.LUA_TNUMBER) {
-        return .{ .Index = @as(u8, @intCast(c.lua_tointegerx(L, -1, null))) };
+        return .{ .ANSI = @as(u8, @intCast(c.lua_tointegerx(L, -1, null))) };
     } else if (c.lua_type(L, -1) == c.LUA_TSTRING) {
         const hex_ptr = c.lua_tolstring(L, -1, null);
         const hex = std.mem.span(hex_ptr);
 
         if (hex.len == 7 and hex[0] == '#') {
-            const r = std.fmt.parseInt(u8, hex[1..3], 16) catch return .Default;
-            const g = std.fmt.parseInt(u8, hex[3..5], 16) catch return .Default;
-            const b = std.fmt.parseInt(u8, hex[5..7], 16) catch return .Default;
-            return .{ .Rgb = .{ .r = r, .g = g, .b = b } };
+            const r = std.fmt.parseInt(u8, hex[1..3], 16) catch return .Reset;
+            const g = std.fmt.parseInt(u8, hex[3..5], 16) catch return .Reset;
+            const b = std.fmt.parseInt(u8, hex[5..7], 16) catch return .Reset;
+            return .{ .RGB = .{ .r = r, .g = g, .b = b } };
         }
     }
-    return .Default;
+    return .Reset;
 }
 
 fn registerFn(L: ?*c.lua_State, name: [:0]const u8, func: c.lua_CFunction) void {
@@ -156,7 +155,7 @@ export fn api_print(L: ?*c.lua_State) c_int {
     const str_ptr = c.luaL_checklstring(L, 1, null);
     const message = std.mem.span(str_ptr);
 
-    var theme = style.Style{ .fg = ansi.Yellow, .bg = ansi.Black, .bold = true };
+    var theme = style.Style{ .fg = .Yellow, .bg = .Black, .add_modifier = .{ .bold = true } };
     var duration: u32 = 3000;
 
     if (c.lua_istable(L, 2)) {
@@ -166,11 +165,11 @@ export fn api_print(L: ?*c.lua_State) c_int {
         theme.bg = parseLuaColor(L, "bg");
 
         _ = c.lua_getfield(L, -1, "italic");
-        theme.italic = c.lua_toboolean(L, -1) != 0;
+        theme.add_modifier.italic = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         _ = c.lua_getfield(L, -1, "bold");
-        theme.bold = c.lua_toboolean(L, -1) != 0;
+        theme.add_modifier.bold = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         _ = c.lua_getfield(L, -1, "duration");
@@ -589,15 +588,15 @@ export fn api_add_style(L: ?*c.lua_State) c_int {
         hl_style.bg = parseLuaColor(L, "bg");
 
         _ = c.lua_getfield(L, -1, "italic");
-        hl_style.italic = c.lua_toboolean(L, -1) != 0;
+        hl_style.add_modifier.italic = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         _ = c.lua_getfield(L, -1, "bold");
-        hl_style.bold = c.lua_toboolean(L, -1) != 0;
+        hl_style.add_modifier.bold = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         _ = c.lua_getfield(L, -1, "underline");
-        hl_style.underline = c.lua_toboolean(L, -1) != 0;
+        hl_style.add_modifier.underlined = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         c.lua_pop(L, 1);
@@ -786,15 +785,15 @@ export fn api_add_ghost(L: ?*c.lua_State) c_int {
         theme.bg = parseLuaColor(L, "bg");
 
         _ = c.lua_getfield(L, -1, "italic");
-        theme.italic = c.lua_toboolean(L, -1) != 0;
+        theme.add_modifier.italic = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         _ = c.lua_getfield(L, -1, "bold");
-        theme.bold = c.lua_toboolean(L, -1) != 0;
+        theme.add_modifier.bold = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         _ = c.lua_getfield(L, -1, "underline");
-        theme.underline = c.lua_toboolean(L, -1) != 0;
+        theme.add_modifier.underlined = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
 
         c.lua_pop(L, 1);
@@ -929,7 +928,7 @@ export fn api_ts_load_language(L: ?*c.lua_State) c_int {
     editor.ts_manager.loadLanguage(editor.io, view.buf, lang_name, lib_path, query_path) catch |err| {
         const err_msg = std.fmt.allocPrint(editor.allocator, "TS Load Error: {s}", .{@errorName(err)}) catch return 0;
         defer editor.allocator.free(err_msg);
-        editor.toastNotify(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+        editor.toastNotify(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
         return 0;
     };
 
@@ -1091,13 +1090,13 @@ export fn api_add_buffer_style(L: ?*c.lua_State) c_int {
         hl_style.fg = parseLuaColor(L, "fg");
         hl_style.bg = parseLuaColor(L, "bg");
         _ = c.lua_getfield(L, -1, "italic");
-        hl_style.italic = c.lua_toboolean(L, -1) != 0;
+        hl_style.add_modifier.italic = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
         _ = c.lua_getfield(L, -1, "bold");
-        hl_style.bold = c.lua_toboolean(L, -1) != 0;
+        hl_style.add_modifier.bold = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
         _ = c.lua_getfield(L, -1, "underline");
-        hl_style.underline = c.lua_toboolean(L, -1) != 0;
+        hl_style.add_modifier.underlined = c.lua_toboolean(L, -1) != 0;
         c.lua_pop(L, 1);
         c.lua_pop(L, 1);
     }

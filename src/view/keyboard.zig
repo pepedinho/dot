@@ -1,4 +1,5 @@
 const std = @import("std");
+const zui = @import("zui");
 
 pub const Key = union(enum) {
     ascii: u8,
@@ -13,11 +14,24 @@ pub const Key = union(enum) {
     none,
 };
 
-/// Reads a single keystroke from standard input (stdin) in raw (non-blocking) mode.
-/// This function handles standard ASCII characters as well as multi-byte
-/// ANSI escape sequences (such as arrow keys).
-///
-/// Returns `.none` if no character is currently available in the buffer.
+fn mapKeyCode(code: zui.event.KeyCode) Key {
+    return switch (code) {
+        .up => .up,
+        .down => .down,
+        .right => .right,
+        .left => .left,
+        .back_tab => .shift_tab,
+        .backspace => .backspace,
+        .enter => .enter,
+        .esc => .escape,
+        .char => |c| {
+            if (c <= 127) return .{ .ascii = @intCast(c) };
+            return .none;
+        },
+        else => .none,
+    };
+}
+
 pub fn readKey() !Key {
     var buf: [1]u8 = undefined;
 
@@ -25,30 +39,9 @@ pub fn readKey() !Key {
 
     if (byte_read == 0) return .none;
 
-    const c = buf[0];
-
-    if (c == '\x1b') {
-        var seq: [2]u8 = undefined;
-
-        if ((try std.posix.read(std.posix.STDIN_FILENO, seq[0..1])) == 0) return .escape;
-        if ((try std.posix.read(std.posix.STDIN_FILENO, seq[1..2])) == 0) return .escape;
-
-        if (seq[0] == '[') {
-            switch (seq[1]) {
-                'A' => return .up,
-                'B' => return .down,
-                'C' => return .right,
-                'D' => return .left,
-                'Z' => return .shift_tab,
-                else => return .escape,
-            }
-        }
-        return .escape;
-    } else if (c == 127) {
-        return .backspace;
-    } else if (c == '\r') {
-        return .enter;
-    } else {
-        return .{ .ascii = c };
+    if (zui.EventParser.parse(buf[0..1])) |result| {
+        return mapKeyCode(result.event.key.code);
     }
+
+    return .none;
 }

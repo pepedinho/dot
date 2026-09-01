@@ -1,48 +1,66 @@
 const std = @import("std");
-const style = @import("style.zig");
+const zui = @import("zui");
 
-pub const Black = style.Color{ .Index = 0 };
-pub const Red = style.Color{ .Index = 1 };
-pub const Green = style.Color{ .Index = 2 };
-pub const Yellow = style.Color{ .Index = 3 };
-pub const Blue = style.Color{ .Index = 4 };
-pub const Magenta = style.Color{ .Index = 5 };
-pub const Cyan = style.Color{ .Index = 6 };
-pub const White = style.Color{ .Index = 7 };
-pub const Default: style.Color = .Default;
-
-pub const Color = struct {
-    r: u8,
-    g: u8,
-    b: u8,
-};
+pub const Rgb = struct { r: u8, g: u8, b: u8 };
 
 pub const ShimmerOptions = struct {
-    base_color: Color,
-    highlight_color: Color,
+    base_color: Rgb,
+    highlight_color: Rgb,
     wave_width: f32 = 8.0,
 };
 
-pub const hide_cursor = "\x1b[?25l";
-pub const show_cursor = "\x1b[?25h";
-pub const clear_screen = "\x1b[2J\x1b[H";
-
-pub fn goto(writer: *std.Io.Writer, row: usize, col: usize) !void {
-    try writer.print("\x1b[{d};{d}H", .{ row, col });
-}
-
-fn lerpColor(c1: Color, c2: Color, t: f32) Color {
+fn lerpColor(c1: Rgb, c2: Rgb, t: f32) Rgb {
     const clamped_t = if (t < 0.0) 0.0 else if (t > 1.0) 1.0 else t;
-
-    return Color{
+    return .{
         .r = @intFromFloat(@round(@as(f32, @floatFromInt(c1.r)) + (@as(f32, @floatFromInt(c2.r)) - @as(f32, @floatFromInt(c1.r))) * clamped_t)),
         .g = @intFromFloat(@round(@as(f32, @floatFromInt(c1.g)) + (@as(f32, @floatFromInt(c2.g)) - @as(f32, @floatFromInt(c1.g))) * clamped_t)),
         .b = @intFromFloat(@round(@as(f32, @floatFromInt(c1.b)) + (@as(f32, @floatFromInt(c2.b)) - @as(f32, @floatFromInt(c1.b))) * clamped_t)),
     };
 }
 
+pub fn applyShimmerToBuffer(
+    buf: *zui.Buffer,
+    x: u16,
+    y: u16,
+    text: []const u8,
+    phase: f32,
+    options: ShimmerOptions,
+) void {
+    const cycle_length = @as(f32, @floatFromInt(text.len)) + (options.wave_width * 2.0);
+    var local_phase = phase;
+    while (local_phase > cycle_length) {
+        local_phase -= cycle_length;
+    }
+
+    var current_x = x;
+    var view = std.unicode.Utf8View.init(text) catch return;
+    var iter = view.iterator();
+
+    while (iter.nextCodepointSlice()) |codepoint_slice| {
+        if (current_x >= buf.width) break;
+
+        const pos: f32 = @floatFromInt(current_x - x);
+        const adjusted_phase = local_phase - options.wave_width;
+        const dist = @abs(pos - adjusted_phase);
+
+        var intensity: f32 = 0.0;
+        if (dist < options.wave_width) {
+            intensity = 1.0 - (dist / options.wave_width);
+        }
+
+        const current_color = lerpColor(options.base_color, options.highlight_color, intensity);
+        const style = zui.Style{ .fg = .{ .RGB = .{ .r = current_color.r, .g = current_color.g, .b = current_color.b } } };
+
+        if (buf.get(current_x, y)) |cell| {
+            cell.setSymbol(codepoint_slice);
+            cell.setStyle(style);
+        }
+        current_x += 1;
+    }
+}
+
 pub fn writeShimmerText(
-    writer: *std.Io.Writer,
+    writer: anytype,
     text: []const u8,
     phase: f32,
     options: ShimmerOptions,
@@ -59,7 +77,6 @@ pub fn writeShimmerText(
         const dist = @abs(pos - adjusted_phase);
 
         var intensity: f32 = 0.0;
-
         if (dist < options.wave_width) {
             intensity = 1.0 - (dist / options.wave_width);
         }
@@ -71,7 +88,6 @@ pub fn writeShimmerText(
             current_color.b,
             char,
         });
-        // try writer.writeAll("\x1b[0m");
         try writer.writeAll("\x1b[39m");
     }
 }

@@ -4,6 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zui_dep = b.dependency("zui", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "dot",
         .root_module = b.createModule(.{
@@ -13,8 +18,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.root_module.addImport("zui", zui_dep.module("zui"));
+
     exe.root_module.addIncludePath(b.path("vendor/lua/src/"));
-    // exe.root_module.linkLibC();
     exe.root_module.link_libc = true;
 
     const lua_sources = &[_][]const u8{

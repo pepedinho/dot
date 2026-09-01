@@ -13,7 +13,7 @@ const scheduler = @import("scheduler.zig");
 const commands = @import("commands.zig");
 const api = @import("../api/api.zig");
 const job = @import("worker.zig");
-const ansi = @import("../view/ansi.zig");
+const zui = @import("zui");
 
 const Style = @import("../view/style.zig").Style;
 const c = api.c;
@@ -214,14 +214,14 @@ pub const Editor = struct {
             if (api.c.luaL_loadfilex(L, init_path_c.ptr, null) == 0) {
                 if (api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
                     const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                    self.toastNotify(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                    self.toastNotify(err_msg, 8000, .{ .fg = .White, .bg = .Red, .add_modifier = .{ .bold = true } }) catch {};
                     api.c.lua_pop(L, 1);
                 } else {
-                    self.toastNotify("Config loaded !", 2000, .{ .fg = ansi.Green, .bg = ansi.Black }) catch {};
+                    self.toastNotify("Config loaded !", 2000, .{ .fg = .Green, .bg = .Black }) catch {};
                 }
             } else {
                 const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                self.toastNotify(err_msg, 8000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true }) catch {};
+                self.toastNotify(err_msg, 8000, .{ .fg = .White, .bg = .Red, .add_modifier = .{ .bold = true } }) catch {};
                 api.c.lua_pop(L, 1);
             }
         }
@@ -343,7 +343,7 @@ pub const Editor = struct {
 
                     if (api.c.lua_pcallk(L, 0, 0, 0, 0, null) != 0) {
                         const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                        self.toastNotify(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+                        self.toastNotify(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
                         api.c.lua_pop(L, 1);
                     }
                     self.needs_redraw = true;
@@ -456,7 +456,7 @@ pub const Editor = struct {
                 const bounds = view.buf.getLineBounds(view.buf.gap_start);
                 if (self.clipboard) |old_clip| self.allocator.free(old_clip);
                 self.clipboard = try view.buf.getLogicalRange(self.allocator, bounds.start, bounds.end);
-                try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = ansi.Cyan, .bg = ansi.Black, .bold = true });
+                try self.toast_manager.push("Yanked 1 line", 2000, .{ .fg = .Cyan, .bg = .Black, .add_modifier = .{ .bold = true } });
                 self.needs_redraw = true;
             },
             .Paste => {
@@ -472,10 +472,10 @@ pub const Editor = struct {
                     self.ts_manager.edit(view.buf, start_byte, start_byte, start_byte + @as(u32, @intCast(clip.len)), start_pos.y, start_pos.x, start_pos.y, start_pos.x, end_pos.y, end_pos.x);
                     try view.buf.history.recordBatchInsert(view.buf.gap_start, clip);
 
-                    try self.toast_manager.push("Pasted", 1500, .{ .fg = ansi.Green, .bg = ansi.Black, .bold = true });
+                    try self.toast_manager.push("Pasted", 1500, .{ .fg = .Green, .bg = .Black, .add_modifier = .{ .bold = true } });
                     self.needs_redraw = true;
                 } else {
-                    try self.toast_manager.push("Clipboard is empty!", 2000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true });
+                    try self.toast_manager.push("Clipboard is empty!", 2000, .{ .fg = .White, .bg = .Red, .add_modifier = .{ .bold = true } });
                     self.needs_redraw = true;
                 }
             },
@@ -636,19 +636,6 @@ pub const Editor = struct {
         }
     }
 
-    /// Render all `self.pop_store` popup to the screen
-    pub fn renderAllPopup(
-        self: *Editor,
-        out: *std.Io.Writer,
-    ) !void {
-        // const cursor_pos = self.buf.getCursorPos();
-        var it = self.pop_store.valueIterator();
-        while (it.next()) |entry| {
-            try pop.render(out, entry);
-        }
-        // try out.print("\x1b[{d};{d}H", .{ cursor_pos.y, cursor_pos.x });
-    }
-
     /// Save current buffer as associated buffer filename
     /// if `buffers[current].filename` is null display an error popup
     pub fn saveFile(self: *Editor) !void {
@@ -774,7 +761,7 @@ pub const Editor = struct {
     /// - read user input
     /// - draw screen
     /// - update scheduler
-    pub fn run(self: *Editor, stdout: *std.Io.Writer) !void {
+    pub fn run(self: *Editor, zui_term: *zui.terminal.Terminal) !void {
         while (self.is_running) {
             const key = try keyboard.readKey();
             try self.scheduler.update(&self.action_queue);
@@ -791,7 +778,7 @@ pub const Editor = struct {
 
                     if (api.c.lua_pcallk(L, 2, 0, 0, 0, null) != 0) {
                         const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                        self.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+                    self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
                         api.c.lua_pop(L, 1);
                     }
 
@@ -895,9 +882,7 @@ pub const Editor = struct {
                 if (active.scroll()) {
                     self.needs_redraw = true;
                 }
-                var has_dirty_views = false;
                 for (self.views.items, 0..) |v, i| {
-                    if (v.is_dirty) has_dirty_views = true;
                     var buffer_already_processed = false;
                     for (self.views.items[0..i]) |prev| {
                         if (prev.buf == v.buf) {
@@ -923,30 +908,15 @@ pub const Editor = struct {
                     }
                 }
 
-                // self.ts_manager.parse(active.buf);
-                // const start_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + 1, 1)));
-                // const end_byte = @as(u32, @intCast(active.buf.getLogicalFromRowCol(active.row_offset + active.height + 2, 1)));
-                // self.ts_manager.highlight(active.buf, start_byte, end_byte);
-                // active.buf.is_dirty = false;
-
-                if (self.needs_redraw) {
-                    // try ui.refreshScreen(stdout, self);
-                    try self.renderer.refreshScreen(self, stdout);
-                    self.needs_redraw = false;
-                } else {
-                    if (has_dirty_views) {
-                        try self.renderer.refreshDirtyViews(self, stdout);
-                    } else {
-                        try self.renderer.updateCurrentLine(self, stdout);
-                    }
-                }
+                self.needs_redraw = false;
                 self.is_dirty = false;
             }
 
-            if (self.renderer.active_animations.items.len > 0)
-                try self.renderer.refreshAnimationsOnly(stdout, self);
-
-            try stdout.flush();
+            try zui_term.draw(self, struct {
+                fn render(ed: *Editor, frame: *zui.terminal.Frame) void {
+                    ed.renderer.renderToFrame(ed, frame);
+                }
+            }.render);
             self.frame_rendered += 1;
             const now_fps = std.Io.Clock.now(.real, self.io).toMilliseconds();
             if (now_fps - self.last_fps_time >= 1000) {
@@ -1008,7 +978,7 @@ pub const Editor = struct {
                 _ = api.c.lua_rawgeti(L, api.c.LUA_REGISTRYINDEX, ref_id);
                 if (api.c.lua_pcallk(L, 0, 1, 0, 0, null) != 0) {
                     const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-                    self.toast_manager.push(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red }) catch {};
+                        self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
                     api.c.lua_pop(L, 1);
                 } else {
                     if (api.c.lua_isboolean(L, -1) != false) {
@@ -1108,7 +1078,7 @@ pub const Editor = struct {
             try utils.dumpToFile(self.io, init_file_path, init_content);
             init_file.close(self.io);
 
-            try self.toast_manager.push("Install done !", 3000, .{ .fg = ansi.White, .bg = ansi.Green, .bold = true });
+            try self.toast_manager.push("Install done !", 3000, .{ .fg = .White, .bg = .Green, .add_modifier = .{ .bold = true } });
         };
     }
 

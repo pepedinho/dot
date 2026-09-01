@@ -4,7 +4,6 @@ const buffer = @import("gap.zig");
 const utils = @import("../utils.zig");
 const fs = @import("../fs/filesystem.zig");
 const api = @import("../api/api.zig");
-const ansi = @import("../view/ansi.zig");
 
 const Editor = core.Editor;
 
@@ -185,10 +184,10 @@ fn cmdSource(ed: *Editor, args: []const u8) !void {
 
         if (api.c.luaL_loadfilex(L, c_path.ptr, null) != 0 or api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
             const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
-            try ed.toastNotify(err_msg, 5000, .{ .fg = ansi.White, .bg = ansi.Red, .bold = true });
+            try ed.toastNotify(err_msg, 5000, .{ .fg = .White, .bg = .Red, .add_modifier = .{ .bold = true } });
             api.c.lua_settop(L, -2);
         } else {
-            try ed.toastNotify("Lua script loaded!", 2000, .{ .fg = ansi.Green, .bg = ansi.Black });
+            try ed.toastNotify("Lua script loaded!", 2000, .{ .fg = .Green, .bg = .Black });
         }
     }
 }

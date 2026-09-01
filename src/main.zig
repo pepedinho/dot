@@ -1,9 +1,11 @@
 const std = @import("std");
+const zui = @import("zui");
 const buffer = @import("core/gap.zig");
 const terminal = @import("view/terminal.zig");
 const keyboard = @import("view/keyboard.zig");
 const utils = @import("utils.zig");
 const Editor = @import("core/core.zig").Editor;
+const Window = @import("core/core.zig").Window;
 const Action = @import("core/core.zig").Action;
 const PopBuilder = @import("core/core.zig").PopBuilder;
 const Fs = @import("fs/filesystem.zig").Fs;
@@ -14,10 +16,13 @@ pub fn main(init: std.process.Init) !void {
 
     const allocator = init.gpa;
 
-    var stoudt_buf: [4096]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(init.io, &stoudt_buf);
+    var stout_buf: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stout_buf);
     const stdout = &stdout_writer.interface;
-    try terminal.openAlternateScreen(stdout);
+
+    const win = try Window.init();
+    var zui_term = try zui.terminal.Terminal.init(allocator, stdout, win.cols, win.rows);
+    defer zui_term.deinit();
 
     var dot = try Editor.init(allocator, init.io, init.environ_map);
     defer dot.deinit();
@@ -42,6 +47,5 @@ pub fn main(init: std.process.Init) !void {
             }
         }
     }
-    try dot.run(stdout);
-    try terminal.closeAlternateScreen(stdout);
+    try dot.run(&zui_term);
 }

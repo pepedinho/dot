@@ -1,5 +1,4 @@
 const std = @import("std");
-const ansi = @import("ansi.zig");
 const style = @import("style.zig");
 
 pub const GhostLine = struct {
@@ -45,29 +44,5 @@ pub const GhostManager = struct {
             .text = text,
             .theme = theme,
         });
-    }
-
-    pub fn renderAtRow(self: *const GhostManager, stdout: anytype, buffer_row: usize, screen_x: u16, screen_y: u16, max_rows: u16) !u16 {
-        var lines_drawn: u16 = 0;
-        if (self.ghosts.items.len == 0) return lines_drawn;
-
-        for (self.ghosts.items) |ghost| {
-            if (ghost.buffer_row == buffer_row) {
-                const target_y = screen_y + lines_drawn;
-                if (target_y > max_rows) break;
-
-                try ansi.goto(stdout, target_y, screen_x + @as(u16, @intCast(ghost.col_offset)));
-
-                try ghost.theme.toAnsi(stdout);
-
-                if (ghost.prefix) |p| try stdout.writeAll(p);
-                try stdout.writeAll(ghost.text);
-
-                try stdout.writeAll("\x1b[0m\x1b[K");
-
-                lines_drawn += 1;
-            }
-        }
-        return lines_drawn;
     }
 };
