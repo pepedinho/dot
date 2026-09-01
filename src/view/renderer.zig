@@ -570,21 +570,25 @@ pub const Renderer = struct {
         const buf_height = buf.height;
         if (buf_height == 0 or buf_width == 0) return;
 
-        var offset_y: u16 = 1;
+        const max_rows: u16 = 4;
+        var drawn: u16 = 0;
 
         var i: usize = editor.toast_manager.toasts.items.len;
         while (i > 0) {
             i -= 1;
+
+            if (drawn >= max_rows or drawn + 2 >= buf_height) break;
+            const row = buf_height - 2 - drawn;
+            drawn += 1;
+
             const toast = editor.toast_manager.toasts.items[i];
 
             const display_len: u16 = @intCast(toast.text.len + 4);
             const x = if (buf_width > display_len) buf_width - display_len else 1;
-            const y = if (buf_height > offset_y) buf_height - offset_y else 1;
 
-            if (y < buf_height) {
-                buf.setString(x, y, toast.text, toast.theme);
+            if (x < buf_width) {
+                buf.setString(x, row, toast.text, toast.theme);
             }
-            offset_y += 1;
         }
     }
 

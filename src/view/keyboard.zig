@@ -14,8 +14,19 @@ pub const Key = union(enum) {
     none,
 };
 
-fn mapKeyCode(code: zui.event.KeyCode) Key {
-    return switch (code) {
+fn mapKeyCode(ev: zui.event.KeyEvent) Key {
+    return switch (ev.code) {
+        .char => |c| {
+            if (ev.modifiers.control and c <= 127) {
+                if (c >= 'a' and c <= 'z') return .{ .ascii = @intCast(c - 'a' + 1) };
+                if (c >= 'A' and c <= 'Z') return .{ .ascii = @intCast(c - 'A' + 1) };
+                if (c == '@') return .{ .ascii = 0 };
+                if (c == '[') return .{ .ascii = 27 };
+            }
+            if (c <= 127) return .{ .ascii = @intCast(c) };
+            return .none;
+        },
+        .tab => .{ .ascii = 0x09 },
         .up => .up,
         .down => .down,
         .right => .right,
@@ -24,10 +35,6 @@ fn mapKeyCode(code: zui.event.KeyCode) Key {
         .backspace => .backspace,
         .enter => .enter,
         .esc => .escape,
-        .char => |c| {
-            if (c <= 127) return .{ .ascii = @intCast(c) };
-            return .none;
-        },
         else => .none,
     };
 }
@@ -49,8 +56,26 @@ pub fn readKey() !Key {
     }
 
     if (zui.EventParser.parse(buf[0..total])) |result| {
-        return mapKeyCode(result.event.key.code);
+        return mapKeyCode(result.event.key);
     }
 
     return .none;
+}
+
+test "mapKeyCode restores tab and ctrl mappings" {
+    const k = zui.event.KeyEvent;
+    const tab = mapKeyCode(k{ .code = .tab });
+    try std.testing.expectEqual(Key{ .ascii = 0x09 }, tab);
+
+    const ctrl_s = mapKeyCode(k{ .code = .{ .char = 's' }, .modifiers = .{ .control = true } });
+    try std.testing.expectEqual(Key{ .ascii = 0x13 }, ctrl_s);
+
+    const ctrl_at = mapKeyCode(k{ .code = .{ .char = '@' }, .modifiers = .{ .control = true } });
+    try std.testing.expectEqual(Key{ .ascii = 0 }, ctrl_at);
+
+    const plain = mapKeyCode(k{ .code = .{ .char = 'd' } });
+    try std.testing.expectEqual(Key{ .ascii = 'd' }, plain);
+
+    const shift_tab = mapKeyCode(k{ .code = .back_tab });
+    try std.testing.expectEqual(Key.shift_tab, shift_tab);
 }
