@@ -1,5 +1,3 @@
-local cmd_lib = require("dot.core.commands")
-
 local State = {
 	is_open = false,
 	matches = {},
@@ -10,11 +8,11 @@ local State = {
 }
 
 local colors = {
-	blue = "\27[34m",
-	green = "\27[32m",
-	yellow = "\27[33m",
-	magenta = "\27[35m",
-	white = "\27[37m",
+	blue = "#81A1C1",
+	green = "#A3BE8C",
+	yellow = "#EBCB8B",
+	magenta = "#B48EAD",
+	white = "#ECEFF4",
 }
 
 local function get_file_info(filename)
@@ -36,14 +34,14 @@ end
 
 local function close_pum()
 	if State.is_open then
-		dot.hide_pum()
+		dot.ui.pum.hide()
 		State.is_open = false
 		State.matches = {}
 	end
 end
 
 local function get_command_completions(input)
-	local available_cmds = cmd_lib.get_all()
+	local available_cmds = dot.cmd.list()
 	local matches = {}
 
 	for _, cmd_name in ipairs(available_cmds) do
@@ -61,7 +59,7 @@ end
 local function get_file_completions(cmd_type, type_path)
 	local current_dir = string.match(type_path, "^(.*[/\\])") or ""
 	local prefix = string.sub(type_path, #current_dir + 1)
-	local files = dot.read_dir(current_dir)
+	local files = dot.fs.read_dir(current_dir)
 	local matches = {}
 
 	for _, filename in ipairs(files) do
@@ -84,14 +82,19 @@ local function get_file_completions(cmd_type, type_path)
 end
 
 local function handle_tab(direction)
-	local input = dot.get_cmdline()
+	local input = dot.cmd.input()
 
 	if State.is_open then
 		if State.prev_input == input then
 			State.selected_index = (State.selected_index + direction + #State.matches) % #State.matches
 
-			local win = dot.get_win_size()
-			dot.show_pum(string.len(input) + State.offset, win[1] - 1, State.matches, State.selected_index)
+			local win = dot.ui.win.size()
+			dot.ui.pum.show({
+				x = string.len(input) + State.offset,
+				y = win[1] - 1,
+				items = State.matches,
+				selected = State.selected_index + 1,
+			})
 			return true
 		else
 			close_pum()
@@ -117,7 +120,7 @@ local function handle_tab(direction)
 	end
 
 	if #matches == 1 then
-		dot.set_cmdline(base_prefix .. matches[1].text)
+		dot.cmd.set_input(base_prefix .. matches[1].text)
 		return true
 	end
 
@@ -128,29 +131,34 @@ local function handle_tab(direction)
 	State.selected_index = (direction > 0) and 0 or (#matches - 1)
 	State.base_prefix = base_prefix
 
-	local win = dot.get_win_size()
-	dot.show_pum(string.len(input) + State.offset, win[1] - 1, State.matches, State.selected_index)
+	local win = dot.ui.win.size()
+	dot.ui.pum.show({
+		x = string.len(input) + State.offset,
+		y = win[1] - 1,
+		items = State.matches,
+		selected = State.selected_index + 1,
+	})
 	return true
 end
 
-dot.hook_on("CmdTab", function()
+dot.hook.on("CmdTab", function()
 	return handle_tab(1)
 end)
 
-dot.hook_on("CmdSTab", function()
+dot.hook.on("CmdSTab", function()
 	return handle_tab(-1)
 end)
 
-dot.hook_on("CmdEnter", function()
+dot.hook.on("CmdEnter", function()
 	if State.is_open then
 		local chosen_text = State.matches[State.selected_index + 1].text
 
-		dot.set_cmdline(State.base_prefix .. chosen_text)
+		dot.cmd.set_input(State.base_prefix .. chosen_text)
 
 		close_pum()
 		return true
 	end
 end)
 
-dot.hook_on("CmdBackspace", close_pum)
-dot.hook_on("CmdEsc", close_pum)
+dot.hook.on("CmdBackspace", close_pum)
+dot.hook.on("CmdEsc", close_pum)

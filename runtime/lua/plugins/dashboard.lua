@@ -1,7 +1,4 @@
----@meta dot.dashboard
 local M = {}
-local cmd = require("dot.core.commands")
-local ui = require("dot.ui")
 
 local DASHBOARD_NS = 42
 
@@ -23,9 +20,9 @@ local theme = {
 	gauge_f = "#81A1C1",
 }
 
-local function render_dashboard(buf_id)
-	local debug_info = dot.get_debug_info()
-	local mode = dot.get_mode()
+local function render_dashboard(buffer)
+	local debug_info = dot.debug.info()
+	local mode = dot.mode.get()
 
 	if last_timestamp == 0 then
 		last_timestamp = debug_info.timestamp
@@ -77,7 +74,7 @@ local function render_dashboard(buf_id)
 	add_separator()
 
 	local graph_w, graph_h = 24, 4
-	local graph_canvas = ui.new_braille_canvas(graph_w, graph_h)
+	local graph_canvas = dot.ui.canvas(graph_w, graph_h)
 	local animated_history = {}
 
 	for i = 1, #fps_history do
@@ -85,8 +82,8 @@ local function render_dashboard(buf_id)
 		animated_history[i] = fps_history[i] + wave
 	end
 
-	graph_canvas:plot_smooth_curve(animated_history)
-	local graph_lines = graph_canvas:to_utf8_lines()
+	graph_canvas:plot(animated_history)
+	local graph_lines = graph_canvas:lines()
 
 	local fps_color = debug_info.fps > 50 and theme.success or (debug_info.fps > 30 and theme.warning or theme.error)
 	local mode_color = mode == "Normal" and theme.success or theme.warning
@@ -125,7 +122,7 @@ local function render_dashboard(buf_id)
 	add_separator()
 
 	-- --- MEMORY ---
-	local ram_gauge = ui.create_gauge(debug_info.mem_kb, 5000, 20)
+	local ram_gauge = dot.ui.gauge(debug_info.mem_kb, 5000, 20)
 	add_line(string.format("│  RAM   : [%s] %-5d KB         │", ram_gauge, debug_info.mem_kb), {
 		{ col = 1, len = 1, style = { fg = theme.border } },
 		{ col = 12, len = 20, style = { fg = theme.gauge_f } },
@@ -182,30 +179,34 @@ local function render_dashboard(buf_id)
 		{ { col = 1, len = 52, style = { fg = theme.border } } }
 	)
 
-	dot.set_buffer_lines(buf_id, 1, 999, lines)
-	dot.set_buffer_cursor(buf_id, 1, 1)
+	buffer:set_lines(1, 999, lines)
+	buffer:cursor(1, 1)
 
-	dot.clear_buffer_style(buf_id, DASHBOARD_NS)
+	buffer:clear_highlight(DASHBOARD_NS)
 	for _, s in ipairs(styles) do
-		dot.add_buffer_style(buf_id, DASHBOARD_NS, s.row, s.col, s.len, s.style, 50)
+		buffer:highlight({
+			ns = DASHBOARD_NS,
+			row = s.row,
+			col = s.col,
+			len = s.len,
+			style = s.style,
+			priority = 50,
+		})
 	end
 end
 
 local function open_dashboard()
-	local buf_id = dot.get_buffer_by_name("*Dashboard*")
-	if not buf_id then
-		buf_id = dot.create_buffer("*Dashboard*")
-		dot.set_interval(50, function()
-			local current_id = dot.get_buffer_by_name("*Dashboard*")
-			if current_id then
-				render_dashboard(current_id)
-			end
-		end)
-	end
-	dot.vsplit()
-	dot.set_view_buffer(buf_id)
-	render_dashboard(buf_id)
+	local buffer = dot.buf.open("*Dashboard*")
+	dot.timer.every(50, function()
+		local current = dot.buf.find("*Dashboard*")
+		if current then
+			render_dashboard(current)
+		end
+	end)
+	dot.ui.win.split("h")
+	buffer:show()
+	render_dashboard(buffer)
 end
 
-cmd.create("dashboard", open_dashboard)
+dot.cmd.create("dashboard", open_dashboard)
 return M

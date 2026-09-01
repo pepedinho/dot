@@ -9,14 +9,14 @@ M.setup = function(user_plugins)
 			if ok then
 				loaded = loaded + 1
 			else
-				dot.print("Error: plugin: [" .. plugin_name .. "] Failed to load")
-				dot.print("err: " .. err)
+				dot.ui.notify("plugin: [" .. plugin_name .. "] failed to load")
+				dot.ui.notify("err: " .. tostring(err), { fg = "#FFFFFF", bg = "#BF616A" })
 			end
 		end
 	end
 
 	if loaded > 0 then
-		dot.print("dot: " .. loaded .. "/" .. #user_plugins .. " plugins loaded !")
+		dot.ui.notify("dot: " .. loaded .. "/" .. #user_plugins .. " plugins loaded !")
 	end
 end
 

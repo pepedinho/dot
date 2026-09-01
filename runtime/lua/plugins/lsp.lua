@@ -22,7 +22,7 @@ local function make_notification(method, params_table)
 end
 
 local pwd = os.getenv("PWD")
-local filename = dot.get_file()
+local filename = dot.buf.active():name()
 local filepath = filename
 if string.sub(filename, 1, 1) ~= "/" then
 	filepath = pwd .. "/" .. filename
@@ -34,7 +34,7 @@ local function sync_buffer_to_lsp()
 		return
 	end
 	file_version = file_version + 1
-	local lines = dot.get_lines(1, 99999)
+	local lines = dot.buf.active():lines(1, 99999)
 	local full_text = table.concat(lines, "\n") .. "\n"
 
 	local change_msg = make_notification("textDocument/didChange", {
@@ -44,12 +44,12 @@ local function sync_buffer_to_lsp()
 		},
 		contentChanges = { { text = full_text } },
 	})
-	dot.server_send(zls_id, change_msg)
-	dot.print("🔄 Sync sent to ZLS...")
+	dot.sys.server.send(zls_id, change_msg)
+	dot.ui.notify("🔄 Sync sent to ZLS...")
 end
 
-dot.hook_on("ModeChanged", function()
-	local current_mode = dot.get_mode()
+dot.hook.on("ModeChanged", function()
+	local current_mode = dot.mode.get()
 	if current_mode == "Normal" then
 		sync_buffer_to_lsp()
 	end
@@ -57,21 +57,21 @@ end)
 
 local function handle_lsp_message(data)
 	if data.method then
-		dot.print("📡 ZLS a send : " .. data.method)
+		dot.ui.notify("📡 ZLS a send : " .. data.method)
 	end
 
 	-- if data.method == "window/logMessage" then
-	-- 	dot.print("ZLS Log: " .. data.params.message)
+	-- 	dot.ui.notify("ZLS Log: " .. data.params.message)
 	-- end
 
 	if data.id == 1 then
-		dot.print("✅ ZLS Init! Send file ...")
+		dot.ui.notify("✅ ZLS Init! Send file ...")
 
 		local init_notif = '{"jsonrpc":"2.0","method":"initialized","params":{}}'
 		local init_payload = string.format("Content-Length: %d\r\n\r\n%s", #init_notif, init_notif)
-		dot.server_send(zls_id, init_payload)
+		dot.sys.server.send(zls_id, init_payload)
 
-		local lines = dot.get_lines(1, 99999)
+		local lines = dot.buf.active():lines(1, 99999)
 		local text = table.concat(lines, "\n") .. "\n"
 		local did_open_msg = make_notification("textDocument/didOpen", {
 			textDocument = {
@@ -81,13 +81,13 @@ local function handle_lsp_message(data)
 				text = text,
 			},
 		})
-		dot.server_send(zls_id, did_open_msg)
+		dot.sys.server.send(zls_id, did_open_msg)
 	elseif data.method == "textDocument/publishDiagnostics" then
-		dot.clear_style(LSP_NAMESPACE)
-		dot.clear_ghosts()
+		dot.buf.active():clear_highlight(LSP_NAMESPACE)
+		dot.ui.clear_ghosts()
 		local diags = data.params.diagnostics
 		if #diags > 0 then
-			dot.print("⚠️ ZLS Found " .. #diags .. " error(s) !")
+			dot.ui.notify("⚠️ ZLS Found " .. #diags .. " error(s) !")
 			for _, diag in ipairs(diags) do
 				local row = diag.range.start.line + 1
 				local col = diag.range.start.character + 1
@@ -96,21 +96,34 @@ local function handle_lsp_message(data)
 					length = 1
 				end
 
-				dot.add_style(LSP_NAMESPACE, row, col, length, { fg = error_fg, underline = true }, LSP_PRIORITY)
-				dot.add_ghost(row, col, diag.message, "└── ", { fg = error_fg, bg = error_bg, italic = true })
+				dot.buf.active():highlight({
+					ns = LSP_NAMESPACE,
+					row = row,
+					col = col,
+					len = length,
+					style = { fg = error_fg, underline = true },
+					priority = LSP_PRIORITY,
+				})
+				dot.ui.ghost({
+					row = row,
+					col = col,
+					text = diag.message,
+					prefix = "└── ",
+					style = { fg = error_fg, bg = error_bg, italic = true },
+				})
 			end
 		else
-			dot.print("✅ No error !")
+			dot.ui.notify("✅ No error !")
 		end
 	end
 end
 
-dot.print("🔌 Run ZLS in background...")
+dot.ui.notify("🔌 Run ZLS in background...")
 
 local home_dir = os.getenv("HOME")
 local zls_path = home_dir .. "/.local/share/nvim/mason/bin/zls"
 
-zls_id = dot.start_server(zls_path, function(success, chunk)
+zls_id = dot.sys.server.start(zls_path, function(success, chunk)
 	if not success or not chunk then
 		return
 	end
@@ -141,7 +154,7 @@ zls_id = dot.start_server(zls_path, function(success, chunk)
 			if ok and parsed_data then
 				handle_lsp_message(parsed_data)
 			else
-				dot.print("ERROR: Failed to parse ZLS response")
+				dot.ui.notify("ERROR: Failed to parse ZLS response")
 			end
 		else
 			break
@@ -150,11 +163,11 @@ zls_id = dot.start_server(zls_path, function(success, chunk)
 end)
 
 if zls_id and zls_id > 0 then
-	dot.print("zls id : " .. zls_id)
+	dot.ui.notify("zls id : " .. zls_id)
 	local root_uri = "file://" .. pwd
 	local caps = '{"textDocument":{"publishDiagnostics":{"relatedInformation":true}}}'
 
 	local init_params_str = string.format('{"processId":null,"rootUri":"%s","capabilities":%s}', root_uri, caps)
 	local init_msg = make_request(1, "initialize", init_params_str)
-	dot.server_send(zls_id, init_msg)
+	dot.sys.server.send(zls_id, init_msg)
 end

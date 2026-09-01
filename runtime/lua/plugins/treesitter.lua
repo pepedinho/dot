@@ -18,7 +18,8 @@ local queries_dir = home .. "/.config/dot/queries/"
 local current_loaded_lang = nil
 
 local function update_tree()
-	local filename = dot.get_file()
+	local active = dot.buf.active()
+	local filename = active and active:name() or ""
 	if not filename or filename == "" then
 		return false
 	end
@@ -44,19 +45,18 @@ local function update_tree()
 	local f = io.open(lib_path, "r")
 	if f then
 		f:close()
-		dot.print("🌳 Tree-sitter loaded : " .. lang_name)
-		dot.ts_load_language(lang_name, lib_path, query_path)
+		dot.ui.notify("🌳 Tree-sitter loaded : " .. lang_name)
+		dot.ts.load(lang_name, lib_path, query_path)
 		current_loaded_lang = lang_name
 	else
-		dot.print("lang not found: use lang-install <lang>")
+		dot.ui.notify("lang not found: use lang-install <lang>")
 	end
 
 	return false
 end
 
-dot.hook_on("BufInit", update_tree)
-dot.hook_on("BufOpen", update_tree)
-local cmd = require("dot.core.commands")
-cmd.create("ts", update_tree)
+dot.hook.on("BufInit", update_tree)
+dot.hook.on("BufOpen", update_tree)
+dot.cmd.create("ts", update_tree)
 
 return M

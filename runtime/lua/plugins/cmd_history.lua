@@ -1,11 +1,10 @@
-local cmd_lib = require("dot.core.commands")
 local index = 1
 
-dot.print("cmds_history loaded ! ")
+dot.ui.notify("cmds_history loaded ! ")
 
-dot.hook_on("Up", function()
-	if dot.get_mode() == "Command" then
-		local cmds_history = cmd_lib.history
+dot.hook.on("Up", function()
+	if dot.mode.get() == "Command" then
+		local cmds_history = dot.cmd.history
 		if #cmds_history == 0 then
 			return false
 		end
@@ -19,7 +18,7 @@ dot.hook_on("Up", function()
 			index = #cmds_history
 		end
 
-		dot.set_cmdline(cmds_history[index])
+		dot.cmd.set_input(cmds_history[index])
 		return true
 	end
 	return false

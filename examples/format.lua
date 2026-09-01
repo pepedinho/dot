@@ -1,9 +1,10 @@
-dot.print("formating...")
+dot.ui.notify("formating...")
 
-local cursor = dot.get_cursor()
+local cursor = dot.ui.cursor.get()
 local current_row = cursor[1]
 
-local lines = dot.get_lines(current_row, 99999)
+local active = dot.buf.active()
+local lines = active:lines(current_row, 99999)
 
 if #lines > 0 then
 	local new_lines = {}
@@ -11,8 +12,8 @@ if #lines > 0 then
 		table.insert(new_lines, "// AUTO COMMENT" .. string.upper(line))
 	end
 
-	dot.set_lines(current_row, 99999, new_lines)
-	dot.print("formatting finished !")
+	active:set_lines(current_row, 99999, new_lines)
+	dot.ui.notify("formatting finished !")
 else
-	dot.print("failed to read")
+	dot.ui.notify("failed to read")
 end

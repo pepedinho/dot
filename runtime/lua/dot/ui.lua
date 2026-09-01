@@ -1,5 +1,211 @@
----@meta dot.ui
+---@class dot.ui
 local M = {}
+local style = require("dot.style")
+
+---@class dot.ui.notify_opts
+---@field fg? dot.style.color Foreground color
+---@field bg? dot.style.color Background color
+---@field bold? boolean
+---@field italic? boolean
+---@field underline? boolean
+---@field duration? integer Lifetime in ms (default 3000)
+
+---Shows a transient notification (toast) in the bottom-right corner.
+---@param text string The message to display.
+---@param opts? dot.ui.notify_opts
+function M.notify(text, opts)
+	_dot.print(tostring(text), opts or {})
+end
+
+---Alias of `notify`.
+---@param text string
+---@param opts? dot.ui.notify_opts
+M.toast = M.notify
+
+-- ============================================================
+--  POPUPS
+-- ============================================================
+
+---@class dot.ui.Popup
+---@field id integer
+local Popup = {}
+Popup.__index = Popup
+
+---@class dot.ui.popup_opts
+---@field text? string Content (may contain \n; centered)
+---@field pos? integer[] Screen position { col, row } (default: middle)
+---@field size? integer[] Size { width, height } (default: fits the text)
+---@field duration? integer Lifetime in ms (omit to keep open until closed)
+
+---Creates a bordered popup window.
+---@param opts dot.ui.popup_opts
+---@return dot.ui.Popup
+function M.popup(opts)
+	opts = opts or {}
+	local id = _dot.popup(opts)
+	if not id then
+		error("dot.ui.popup: failed to create popup")
+	end
+	return setmetatable({ id = id }, Popup)
+end
+
+---Replaces the popup content.
+---@param text string
+---@return dot.ui.Popup self
+function Popup:set_text(text)
+	_dot.popup_set_text(self.id, tostring(text))
+	return self
+end
+
+---Closes and removes the popup immediately.
+function Popup:close()
+	_dot.popup_close(self.id)
+end
+
+-- ============================================================
+--  GHOST LINES
+-- ============================================================
+
+---@class dot.ui.ghost_opts
+---@field row integer Buffer row under which the ghost is drawn (1-indexed).
+---@field col integer Column offset for indentation (1-indexed).
+---@field text string The main text.
+---@field prefix? string Optional decoration (e.g. "└── ").
+---@field style? table Formatting style (fg, bg, bold, italic, underline).
+
+---Injects a virtual line below a buffer row (LSP hints, diagnostics...).
+---@param opts dot.ui.ghost_opts
+function M.ghost(opts)
+	opts = opts or {}
+	_dot.add_ghost(opts.row or 1, opts.col or 1, opts.text or "", opts.prefix, opts.style or {})
+end
+
+---Removes all ghost lines.
+function M.clear_ghosts()
+	_dot.clear_ghosts()
+end
+
+-- ============================================================
+--  HIGHLIGHTS (extmarks on the active buffer)
+-- ============================================================
+
+---@class dot.ui.range_opts
+---@field ns? integer Namespace id (default 0)
+---@field row integer Row (1-indexed)
+---@field col integer Starting column (1-indexed)
+---@field len integer Number of characters
+---@field style? table The style table
+---@field priority? integer Higher overrides lower (default 50)
+
+---Parses `highlight` arguments in table or positional form.
+---@return integer ns, integer row, integer col, integer len, table st, integer priority
+local function parse_range(...)
+	local args = { ... }
+	if type(args[1]) == "table" then
+		local o = args[1]
+		return o.ns or 0, o.row or 1, o.col or 1, o.len or 0, o.style or {}, o.priority or 50
+	end
+	return args[1] or 0, args[2] or 1, args[3] or 1, args[4] or 0, args[5] or {}, args[6] or 50
+end
+
+---Colors a range of the active buffer.
+---@param ... dot.ui.range_opts | integer -- table form or (ns, row, col, len, style, priority)
+function M.highlight(...)
+	local ns, row, col, len, st, prio = parse_range(...)
+	_dot.add_style(ns, row, col, len, st, prio)
+end
+
+---Removes all highlights of a namespace from the active buffer.
+---@param ns integer
+function M.clear_highlight(ns)
+	_dot.clear_style(ns or 0)
+end
+
+-- ============================================================
+--  POPUP MENU (PUM)
+-- ============================================================
+
+---@class dot.ui.PumItem
+---@field text string
+---@field icon? string
+---@field icon_color? string
+
+---@class dot.ui.pum_opts
+---@field x? integer Column of the menu (left edge).
+---@field y? integer Row the menu grows up from (default: under the cursor).
+---@field items (string|dot.ui.PumItem)[] The choices.
+---@field selected? integer 1-indexed selected item (default 1).
+
+M.pum = {}
+
+---Opens the completion menu (it grows upward from `y`).
+---@param opts dot.ui.pum_opts
+function M.pum.show(opts)
+	opts = opts or {}
+	local items = opts.items or {}
+	if #items == 0 then
+		return
+	end
+	local x = opts.x or 1
+	local y = opts.y
+	if not y then
+		local size = _dot.get_win_size()
+		local cursor = _dot.get_cursor()
+		y = math.min(cursor[1] + 1, size[1])
+	end
+	_dot.show_pum(x, y, items, math.max(1, opts.selected or 1) - 1)
+end
+
+---Closes the completion menu.
+function M.pum.hide()
+	_dot.hide_pum()
+end
+
+-- ============================================================
+--  WINDOW
+-- ============================================================
+
+M.win = {}
+
+---Returns the terminal size: `{ rows, cols }` (1-indexed).
+---@return integer[] size
+function M.win.size()
+	return _dot.get_win_size()
+end
+
+---Splits the active panel. `direction` is "h" (horizontal) or "v" (vertical).
+---@param direction string
+function M.win.split(direction)
+	if direction == "v" or direction == "V" or direction == "vertical" then
+		_dot.vsplit()
+	else
+		_dot.hsplit()
+	end
+end
+
+-- ============================================================
+--  CURSOR
+-- ============================================================
+
+M.cursor = {}
+
+---Returns the cursor position `{ row, col }` (1-indexed).
+---@return integer[] position
+function M.cursor.get()
+	return _dot.get_cursor()
+end
+
+---Moves the cursor. `col` defaults to 1.
+---@param row integer
+---@param col? integer
+function M.cursor.set(row, col)
+	local id = _dot.active_buffer()
+	_dot.set_buffer_cursor(id, row, col or 1)
+end
+
+-- ============================================================
+--  SUB-PIXEL BRAILLE CANVAS
+-- ============================================================
 
 local function bit_or(a, b)
 	local res = 0
@@ -30,55 +236,6 @@ local function utf8_char(n)
 	end
 end
 
--- ==============================================================================
---  3D MATH ENGINE
--- ==============================================================================
-
---- Rotates a 3D point around the X, Y, and Z axes using rotation matrices.
----@param x number The X coordinate.
----@param y number The Y coordinate.
----@param z number The Z coordinate.
----@param ax number The rotation angle around the X axis (in radians).
----@param ay number The rotation angle around the Y axis (in radians).
----@param az number The rotation angle around the Z axis (in radians).
----@return number x, number y, number z The new rotated coordinates.
-function M.rotate_3d(x, y, z, ax, ay, az)
-	-- X-axis rotation
-	local cos_x, sin_x = math.cos(ax), math.sin(ax)
-	local y1 = y * cos_x - z * sin_x
-	local z1 = y * sin_x + z * cos_x
-
-	local cos_y, sin_y = math.cos(ay), math.sin(ay)
-	local x2 = x * cos_y + z1 * sin_y
-	local z2 = -x * sin_y + z1 * cos_y
-
-	local cos_z, sin_z = math.cos(az), math.sin(az)
-	local x3 = x2 * cos_z - y1 * sin_z
-	local y3 = x2 * sin_z + y1 * cos_z
-
-	return x3, y3, z2
-end
-
---- Projects a 3D coordinate onto a 2D screen space.
----@param x number The 3D X coordinate.
----@param y number The 3D Y coordinate.
----@param z number The 3D Z coordinate.
----@param fov number The Field of View multiplier.
----@param view_dist number The distance of the camera from the object.
----@param cx number The center X position on the 2D screen.
----@param cy number The center Y position on the 2D screen.
----@return integer px, integer py The 2D projected coordinates.
-function M.project_3d(x, y, z, fov, view_dist, cx, cy)
-	local factor = fov / (view_dist + z)
-	local px = math.floor(x * factor + cx)
-	local py = math.floor(y * factor + cy)
-	return px, py
-end
-
--- ==============================================================================
---  BRAILLE SUB-PIXEL CANVAS
--- ==============================================================================
-
 local SUB_IDX_MAP = {
 	{ 0x01, 0x08 },
 	{ 0x02, 0x10 },
@@ -86,28 +243,33 @@ local SUB_IDX_MAP = {
 	{ 0x40, 0x80 },
 }
 
-local BrailleCanvas = {}
-BrailleCanvas.__index = BrailleCanvas
+---@class dot.ui.Canvas
+---@field width integer
+---@field height integer
+local Canvas = {}
+Canvas.__index = Canvas
 
---- Creates a new Braille canvas for sub-pixel rendering.
----@param width integer Width in terminal columns (gives width * 2 sub-pixels).
----@param height integer Height in terminal rows (gives height * 4 sub-pixels).
----@return table
-function M.new_braille_canvas(width, height)
-	local self = setmetatable({}, BrailleCanvas)
-	self.width = width
-	self.height = height
-	self.dots = {}
+---Creates a sub-pixel Braille canvas. Width/height are terminal cells:
+---a canvas of `w x h` cells exposes `w*2` by `h*4` sub-pixels.
+---@param width integer
+---@param height integer
+---@return dot.ui.Canvas
+function M.canvas(width, height)
+	local self = setmetatable({
+		width = width,
+		height = height,
+		dots = {},
+	}, Canvas)
 	for i = 1, width * height do
 		self.dots[i] = 0
 	end
 	return self
 end
 
---- Sets a single sub-pixel on the canvas.
----@param px integer Sub-pixel X coordinate.
----@param py integer Sub-pixel Y coordinate.
-function BrailleCanvas:set_pixel(px, py)
+---Sets a single sub-pixel (1-indexed within the canvas sub-pixel space).
+---@param px integer
+---@param py integer
+function Canvas:set_pixel(px, py)
 	if px < 1 or px > self.width * 2 or py < 1 or py > self.height * 4 then
 		return
 	end
@@ -123,12 +285,12 @@ function BrailleCanvas:set_pixel(px, py)
 	self.dots[cell_idx] = bit_or(self.dots[cell_idx], mask)
 end
 
---- Draws a straight line between two points using Bresenham's line algorithm.
----@param x0 integer Starting sub-pixel X.
----@param y0 integer Starting sub-pixel Y.
----@param x1 integer Ending sub-pixel X.
----@param y1 integer Ending sub-pixel Y.
-function BrailleCanvas:draw_line(x0, y0, x1, y1)
+---Draws a line between two sub-pixels (Bresenham).
+---@param x0 integer
+---@param y0 integer
+---@param x1 integer
+---@param y1 integer
+function Canvas:line(x0, y0, x1, y1)
 	local dx = math.abs(x1 - x0)
 	local dy = math.abs(y1 - y0)
 	local sx = x0 < x1 and 1 or -1
@@ -152,9 +314,9 @@ function BrailleCanvas:draw_line(x0, y0, x1, y1)
 	end
 end
 
---- Plots a smoothed curve from an array of historical data.
----@param data number[] Array of numerical values.
-function BrailleCanvas:plot_smooth_curve(data)
+---Plots a smoothed curve from an array of values.
+---@param data number[]
+function Canvas:plot(data)
 	local canvas_p_width = self.width * 2
 	local canvas_p_height = self.height * 4
 
@@ -205,9 +367,9 @@ function BrailleCanvas:plot_smooth_curve(data)
 	end
 end
 
---- Converts the binary sub-pixel canvas into an array of UTF-8 strings.
----@return string[] lines The rendered Braille characters.
-function BrailleCanvas:to_utf8_lines()
+---Converts the canvas into an array of Braille strings.
+---@return string[] lines
+function Canvas:lines()
 	local lines = {}
 	local base_code = 0x2800
 
@@ -223,13 +385,59 @@ function BrailleCanvas:to_utf8_lines()
 	return lines
 end
 
-function M.create_gauge(val, max, width)
+-- ============================================================
+--  MISC DRAWING HELPERS
+-- ============================================================
+
+---Builds a progress bar string. Example: `███░░░░░`.
+---@param value number Current value.
+---@param max number Maximum value.
+---@param width integer Width in cells.
+---@return string bar
+function M.gauge(value, max, width)
 	local fill_char = "█"
 	local empty_char = "░"
-	local ratio = math.min(math.max(val / max, 0), 1)
+	local ratio = math.min(math.max(value / max, 0), 1)
 	local filled = math.floor(ratio * width)
-	local empty = width - filled
-	return string.rep(fill_char, filled) .. string.rep(empty_char, empty)
+	return string.rep(fill_char, filled) .. string.rep(empty_char, width - filled)
+end
+
+---Rotates a 3D point around X, Y and Z axes.
+---@param x number
+---@param y number
+---@param z number
+---@param ax number Radians
+---@param ay number Radians
+---@param az number Radians
+---@return number x, number y, number z
+function M.rotate3d(x, y, z, ax, ay, az)
+	local cos_x, sin_x = math.cos(ax), math.sin(ax)
+	local y1 = y * cos_x - z * sin_x
+	local z1 = y * sin_x + z * cos_x
+
+	local cos_y, sin_y = math.cos(ay), math.sin(ay)
+	local x2 = x * cos_y + z1 * sin_y
+	local z2 = -x * sin_y + z1 * cos_y
+
+	local cos_z, sin_z = math.cos(az), math.sin(az)
+	local x3 = x2 * cos_z - y1 * sin_z
+	local y3 = x2 * sin_z + y1 * cos_z
+
+	return x3, y3, z2
+end
+
+---Projects a 3D point onto 2D screen space.
+---@param x number
+---@param y number
+---@param z number
+---@param fov number Field-of-view multiplier
+---@param view_dist number Camera distance
+---@param cx number Center X on screen
+---@param cy number Center Y on screen
+---@return integer px, integer py
+function M.project3d(x, y, z, fov, view_dist, cx, cy)
+	local factor = fov / (view_dist + z)
+	return math.floor(x * factor + cx), math.floor(y * factor + cy)
 end
 
 return M

@@ -1,11 +1,10 @@
-dot.print("Plugin Auto-Cleaner Loaded!")
+dot.ui.notify("Plugin Auto-Cleaner Loaded!")
 
-dot.hook_on("BufWritePre", function()
-	local cursor = dot.get_cursor()
+dot.hook.on("BufWritePre", function()
+	local cursor = dot.ui.cursor.get()
 	local row = cursor[1]
 
-	dot.insert("\n// File Saved by Plugin")
-	dot.print("Hook BufWritePre triggered")
+	dot.edit.insert("\n// File Saved by Plugin")
+	dot.ui.notify("Hook BufWritePre triggered")
 	return true
 end)
-

@@ -17,17 +17,17 @@ local registry = {
 
 local function ts_install(lang)
 	if not lang or lang == "" then
-		dot.print("usage: lang-install <lang>")
+		dot.ui.notify("usage: lang-install <lang>")
 		return
 	end
 
 	local info = registry[lang]
 	if not info then
-		dot.print("lang unsupported: " .. lang)
+		dot.ui.notify("lang unsupported: " .. lang)
 		return
 	end
 
-	dot.print("⏳ Installing Tree-sitter for " .. lang .. " in background...")
+	dot.ui.notify("⏳ Installing Tree-sitter for " .. lang .. " in background...")
 
 	local home = os.getenv("HOME")
 	local parsers_dir = home .. "/.config/dot/parsers"
@@ -67,18 +67,17 @@ rm -rf %s
 		f:write(script)
 		f:close()
 	else
-		dot.print("❌ Failed to create install script")
+		dot.ui.notify("❌ Failed to create install script")
 		return
 	end
 
-	dot.spawn("sh " .. sh_filepath, function(success, output)
+	dot.sys.spawn("sh " .. sh_filepath, function(success, output)
 		if success then
-			dot.print("✅ " .. lang .. " installed successfully !")
+			dot.ui.notify("✅ " .. lang .. " installed successfully !")
 		else
-			dot.print("❌ Failed to install " .. lang)
+			dot.ui.notify("❌ Failed to install " .. lang)
 			if output and output ~= "" then
-				-- Optionnel: log l'erreur de zig cc si ça plante
-				dot.print("Error: " .. string.sub(output, 1, 100) .. "...")
+				dot.ui.notify("Error: " .. string.sub(output, 1, 100) .. "...")
 			end
 		end
 
@@ -86,7 +85,6 @@ rm -rf %s
 	end)
 end
 
-local cmd = require("dot.core.commands")
-cmd.create("lang-install", ts_install)
+dot.cmd.create("lang-install", ts_install)
 
 return M

@@ -202,6 +202,18 @@ pub const Editor = struct {
         self.bootstrapConfig() catch {};
 
         if (self.vm) |L| {
+            // Build the public `dot.*` API from the `_dot` primitives.
+            const bootstrap_script = "require('dot')";
+            if (api.c.luaL_loadstring(L, bootstrap_script) == 0) {
+                if (api.c.lua_pcallk(L, 0, api.c.LUA_MULTRET, 0, 0, null) != 0) {
+                    const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+                    self.toastNotify(err_msg, 8000, .{ .fg = .White, .bg = .Red, .add_modifier = .{ .bold = true } }) catch {};
+                    api.c.lua_pop(L, 1);
+                } else {
+                    api.c.lua_settop(L, 0);
+                }
+            }
+
             const home = self.env.get("HOME") orelse ".";
             const init_path = std.fmt.allocPrint(self.allocator, "{s}/.config/dot/init.lua", .{home}) catch return;
             const init_path_c = self.allocator.dupeZ(u8, init_path) catch return;
@@ -1035,28 +1047,26 @@ pub const Editor = struct {
                 \\-- Welcome to Dot Configuration !
                 \\-- ==========================================
                 \\
-                \\local keymaps = require("dot.core.keymaps")
                 \\local plugins = require("dot.core.plugin_manager")
-                \\local log = require("dot.std.log")
+                \\local log = require("dot.log")
                 \\
                 \\-- 1. Custom Keymaps
-                \\keymaps.set("n", "<C-s>", function()
-                \\        dot.save_current_file()
+                \\dot.keymap.set("n", "<C-s>", function()
+                \\        dot.sys.save()
                 \\        log.success("File saved !")
                 \\end)
                 \\
-                \\keymaps.set("n", "dd", function()
-                \\        local cursor = dot.get_cursor()
-                \\        local row = cursor[1]
-                \\        dot.set_lines(row, row, {})
+                \\dot.keymap.set("n", "dd", function()
+                \\        local cursor = dot.ui.cursor.get()
+                \\        dot.buf.active():set_lines(cursor[1], cursor[1], {})
                 \\end)
                 \\
-                \\keymaps.set("n", "gg", function()
-                \\        dot.jump_to(0)
+                \\dot.keymap.set("n", "gg", function()
+                \\        dot.ui.cursor.set(1)
                 \\end)
                 \\
-                \\keymaps.set("n", "G", function()
-                \\        dot.jump_to(9999999)
+                \\dot.keymap.set("n", "G", function()
+                \\        dot.ui.cursor.set(99999999)
                 \\end)
                 \\
                 \\-- 2. Built-in Plugins

@@ -126,7 +126,20 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "set_interval", api_set_interval);
     registerFn(L, "clear_buffer", api_clear_buffer);
 
-    c.lua_setglobal(L, "dot");
+    // --- object-oriented primitives used by the Lua facade (dot.*) ---
+    registerFn(L, "active_buffer", api_active_buffer);
+    registerFn(L, "buf_lines", api_buf_lines);
+    registerFn(L, "buf_name", api_buf_name);
+    registerFn(L, "buf_cursor", api_buf_cursor);
+    registerFn(L, "buf_save", api_buf_save);
+    registerFn(L, "popup", api_popup);
+    registerFn(L, "popup_set_text", api_popup_set_text);
+    registerFn(L, "popup_close", api_popup_close);
+    registerFn(L, "server_stop", api_server_stop);
+
+    // The public API surface (`dot.*`) is assembled in Lua from these
+    // primitives by `runtime/lua/dot/init.lua`.
+    c.lua_setglobal(L, "_dot");
 
     const home = editor.env.get("HOME") orelse ".";
     const pwd = editor.env.get("PWD") orelse ".";
@@ -1240,5 +1253,220 @@ export fn api_set_interval(L: ?*c.lua_State) c_int {
         return 0;
     };
 
+    return 0;
+}
+
+// ============================================================
+//  OBJECT-ORIENTED PRIMITIVES (backing the dot.* Lua facade)
+// ============================================================
+
+export fn api_active_buffer(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    c.lua_pushinteger(L, @intCast(editor.getCurrentBufferIdx()));
+    return 1;
+}
+
+export fn api_buf_lines(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const start_row = @as(usize, @intCast(@max(1, c.luaL_checkinteger(L, 2))));
+    const end_row = @as(usize, @intCast(@max(start_row, c.luaL_checkinteger(L, 3))));
+
+    const buf = editor.buffers.items[buf_id];
+
+    c.lua_newtable(L);
+
+    var current_row: usize = 1;
+    var i: usize = 0;
+    var line_start: usize = 0;
+    var table_idx: c_int = 1;
+    const len = buf.len();
+
+    while (i <= len) : (i += 1) {
+        const is_eof = (i == len);
+        const char = if (!is_eof) buf.charAt(i).? else '\n';
+
+        if (char == '\n' or is_eof) {
+            if (current_row >= start_row and current_row <= end_row) {
+                const line_text = buf.getLogicalRange(editor.allocator, line_start, i) catch "";
+                defer if (line_text.len > 0) editor.allocator.free(line_text);
+
+                _ = c.lua_pushlstring(L, line_text.ptr, line_text.len);
+                c.lua_rawseti(L, -2, table_idx);
+                table_idx += 1;
+            }
+            current_row += 1;
+            line_start = i + 1;
+
+            if (current_row > end_row) break;
+        }
+    }
+
+    return 1;
+}
+
+export fn api_buf_name(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const filename = if (editor.buffers.items[buf_id].filename) |f| f else "";
+    _ = c.lua_pushlstring(L, filename.ptr, filename.len);
+    return 1;
+}
+
+export fn api_buf_cursor(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const pos = editor.buffers.items[buf_id].getCursorPos();
+    c.lua_newtable(L);
+
+    c.lua_pushinteger(L, @intCast(pos.y));
+    c.lua_rawseti(L, -2, 1);
+
+    c.lua_pushinteger(L, @intCast(pos.x));
+    c.lua_rawseti(L, -2, 2);
+    return 1;
+}
+
+export fn api_buf_save(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const buf_id = @as(usize, @intCast(c.luaL_checkinteger(L, 1)));
+    if (buf_id >= editor.buffers.items.len) return 0;
+
+    const buf = editor.buffers.items[buf_id];
+    const name = buf.filename orelse return 0;
+
+    const file = if (std.fs.path.isAbsolute(name))
+        std.Io.Dir.createFileAbsolute(editor.io, name, .{}) catch return 0
+    else
+        std.Io.Dir.cwd().createFile(editor.io, name, .{}) catch return 0;
+    defer file.close(editor.io);
+
+    var writer_buf: [1024]u8 = undefined;
+    var writer = file.writer(editor.io, &writer_buf);
+    writer.interface.writeAll(buf.getFirst()) catch {};
+    writer.interface.writeAll(buf.getSecond()) catch {};
+    writer.flush() catch {};
+    return 0;
+}
+
+export fn api_popup(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    var pos: ?utils.Pos = null;
+    var size: ?utils.Pos = null;
+    var duration: ?i64 = null;
+    var text: []const u8 = "";
+
+    c.luaL_checktype(L, 1, c.LUA_TTABLE);
+    c.lua_pushvalue(L, 1);
+
+    _ = c.lua_getfield(L, -1, "text");
+    if (c.lua_isstring(L, -1) != 0) {
+        var len: usize = 0;
+        const ptr = c.lua_tolstring(L, -1, &len);
+        text = ptr[0..len];
+    }
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, -1, "pos");
+    if (c.lua_istable(L, -1)) {
+        var x: usize = 0;
+        var y: usize = 0;
+        _ = c.lua_rawgeti(L, -1, 1);
+        x = @intCast(c.luaL_optinteger(L, -1, 0));
+        c.lua_pop(L, 1);
+        _ = c.lua_rawgeti(L, -1, 2);
+        y = @intCast(c.luaL_optinteger(L, -1, 0));
+        c.lua_pop(L, 1);
+        pos = .{ .x = x, .y = y };
+    }
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, -1, "size");
+    if (c.lua_istable(L, -1)) {
+        var w: usize = 0;
+        var h: usize = 0;
+        _ = c.lua_rawgeti(L, -1, 1);
+        w = @intCast(c.luaL_optinteger(L, -1, 0));
+        c.lua_pop(L, 1);
+        _ = c.lua_rawgeti(L, -1, 2);
+        h = @intCast(c.luaL_optinteger(L, -1, 0));
+        c.lua_pop(L, 1);
+        size = .{ .x = w, .y = h };
+    }
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, -1, "duration");
+    if (c.lua_isinteger(L, -1) != 0) {
+        duration = @intCast(c.lua_tointegerx(L, -1, null));
+    }
+    c.lua_pop(L, 1);
+
+    c.lua_pop(L, 1); // pop the options table
+
+    const win = editor.win;
+    const eff_pos: utils.Pos = pos orelse .{ .x = win.cols / 2, .y = win.rows / 2 };
+    const eff_size: utils.Pos = size orelse .{ .x = text.len + 4, .y = 3 };
+
+    const pop_id = editor.createPop(eff_pos, eff_size, duration) catch return 0;
+    if (editor.pop_store.getPtr(pop_id)) |p| {
+        p.clear();
+        p.write(text) catch {};
+    }
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    c.lua_pushinteger(L, @intCast(pop_id));
+    return 1;
+}
+
+export fn api_popup_set_text(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+    const text_ptr = c.luaL_checklstring(L, 2, null);
+
+    if (editor.pop_store.getPtr(id)) |p| {
+        p.clear();
+        p.write(std.mem.span(text_ptr)) catch {};
+    }
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_popup_close(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+    editor.destroyPop(id);
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+export fn api_server_stop(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const server_id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+
+    if (editor.server_manager.servers.fetchRemove(server_id)) |kv| {
+        const child = kv.value;
+        child.kill(editor.io);
+        if (child.stdin) |*in| in.close(editor.io);
+        // The reader thread reaps the process on its next read failure.
+    }
     return 0;
 }
