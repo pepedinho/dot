@@ -18,6 +18,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.use_llvm = true;
+
     exe.root_module.addImport("zui", zui_dep.module("zui"));
 
     exe.root_module.addIncludePath(b.path("vendor/lua/src/"));
