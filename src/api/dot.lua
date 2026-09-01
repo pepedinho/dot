@@ -4,7 +4,7 @@
 -- from the `_dot.*` primitives. Do not execute this file directly.
 
 ---@class dot
----@field ui dot.ui UI helpers: toasts, popups, highlights, PUM, cursor, canvas.
+---@field ui dot.ui UI helpers: toasts, popups, highlights, PUM, cursor, canvas, palette.
 ---@field buf dot.buf Buffer management and the `Buffer` class.
 ---@field edit dot.edit Editing primitives (insert, cursor movement).
 ---@field cmd dot.cmd Command registry, history and command-line access.
@@ -40,6 +40,35 @@ dot = {}
 ---@field text string
 ---@field icon? string
 ---@field icon_color? dot.style.color
+
+---A single styled row of the command palette.
+---@class dot.ui.PaletteRow
+---@field text string
+---@field fg? dot.style.color
+---@field bg? dot.style.color
+---@field bold? boolean
+---@field italic? boolean
+---@field underline? boolean
+---@field marker? string Marker printed before the text when highlighted.
+---@field marker_fg? dot.style.color
+
+---Options for `dot.ui.palette.open`.
+---@class dot.ui.palette_opts
+---@field title? string Title shown at the top of the palette.
+---@field rows? (string|dot.ui.PaletteRow)[] Initial rows (defaults to all commands).
+---@field background? dot.style.color Popup background fill.
+---@field accent? dot.style.color Border + indicator color.
+---@field on_enter? fun(selected: integer, text: string) Custom action on Enter.
+---@field on_input? fun(input: string) Called whenever the input changes.
+--
+-- Tab / Shift-Tab in the palette autocomplete: `cmd <arg>` completes the path
+-- (cycling through matches with a `[n/m]` counter), a bare name completes a
+-- command from `dot.cmd.list()`.
+
+---@class dot.ui.palette
+---@field open fun(opts: dot.ui.palette_opts): table Open the palette.
+---@field close fun(palette?: table) Close a palette (or the active one).
+---@field active fun(): boolean True while a palette is open.
 
 ---@return dot dot
 return dot

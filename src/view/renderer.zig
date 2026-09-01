@@ -65,7 +65,7 @@ pub const Renderer = struct {
         self.traceBorder(buf, editor);
         self.drawStatusLine(buf, editor);
 
-        if (editor.mode == .Command or editor.mode == .Search) {
+        if ((editor.mode == .Command or editor.mode == .Search) and !editor.palette_active) {
             self.drawCommandPrompt(buf, editor);
         }
 
@@ -193,6 +193,11 @@ pub const Renderer = struct {
         const buf = frame.buffer;
 
         if (editor.mode == .Command or editor.mode == .Search) {
+            if (editor.palette_active) {
+                // The palette owns the screen; hide the text cursor.
+                frame.setCursor(0, 0);
+                return;
+            }
             const mode_idx = @intFromEnum(editor.mode);
             const offset: u16 = @intCast(MODE[mode_idx].len + 3);
             const cmd_len: u16 = @intCast(@min(editor.cmd_buf.items.len, 1024));
@@ -507,14 +512,22 @@ pub const Renderer = struct {
 
     /// Draws a Pop window with a box-drawing border and centered text.
     fn drawPop(self: *Renderer, buf: *zui.Buffer, pop: *const @import("pop.zig").Pop) void {
-        _ = self;
         const x0: u16 = @intCast(pop.pos.x - 1);
         const y0: u16 = @intCast(pop.pos.y - 1);
         const w: u16 = @intCast(pop.size.x);
         const h: u16 = @intCast(pop.size.y);
 
-        const border_style = zui.Style{ .fg = .White };
-        const inner_style = zui.Style{ .fg = .White };
+        // Bordered modal (command palette / menu) driven by styled rows.
+        if (pop.rows.items.len > 0) {
+            self.drawPalette(buf, pop, x0, y0, w, h);
+            return;
+        }
+
+        const border_style = zui.Style{ .fg = borderColor(pop.border_color) };
+        const inner_style = if (pop.pop_bg) |bg|
+            zui.Style{ .fg = .White, .bg = ansiBg(bg) }
+        else
+            zui.Style{ .fg = .White };
 
         // Top border
         buf.setCell(x0, y0, "┌", border_style);
@@ -559,6 +572,68 @@ pub const Renderer = struct {
                 buf.setString(start_x, text_y, line[0..display_len], inner_style);
             }
             row_offset += 1;
+        }
+    }
+
+    /// Draws a full-screen palette: a background fill plus a centered list of
+    /// left-aligned rows. The active row (first in the list) is highlighted.
+    /// Draws a bordered modal (command palette / menu) filled with a background
+    /// and a left-aligned list of styled rows, bounded by `pop.size`.
+    fn drawPalette(self: *Renderer, buf: *zui.Buffer, pop: *const @import("pop.zig").Pop, x0: u16, y0: u16, w: u16, h: u16) void {
+        _ = self;
+        if (w < 2 or h < 2) return;
+
+        const bg: ?zui.Color = if (pop.pop_bg) |b| ansiBg(b) else .Black;
+        const border_style = zui.Style{ .fg = borderColor(pop.border_color) };
+        const base = zui.Style{ .fg = .White, .bg = bg };
+
+        // Border box.
+        buf.setCell(x0, y0, "┌", border_style);
+        for (1..w - 1) |k| {
+            buf.setCell(x0 + @as(u16, @intCast(k)), y0, "─", border_style);
+        }
+        if (w >= 2) buf.setCell(x0 + w - 1, y0, "┐", border_style);
+        var i: u16 = 1;
+        while (i < h - 1) : (i += 1) {
+            buf.setCell(x0, y0 + i, "│", border_style);
+            var j: u16 = 1;
+            while (j < w - 1) : (j += 1) {
+                buf.setCell(x0 + j, y0 + i, " ", base);
+            }
+            if (w >= 2) buf.setCell(x0 + w - 1, y0 + i, "│", border_style);
+        }
+        buf.setCell(x0, y0 + h - 1, "└", border_style);
+        for (1..w - 1) |k| {
+            buf.setCell(x0 + @as(u16, @intCast(k)), y0 + h - 1, "─", border_style);
+        }
+        if (w >= 2) buf.setCell(x0 + w - 1, y0 + h - 1, "┘", border_style);
+
+        const inner_w = w - 2;
+        const inner_h = h - 2;
+        const list_x = x0 + 1;
+        const accent = borderColor(pop.border_color);
+
+        for (pop.rows.items, 0..) |row, ri| {
+            const row_y = y0 + 1 + @as(u16, @intCast(ri));
+            if (ri >= inner_h) break;
+            const row_style = zui.Style{ .fg = parseColor(row.fg orelse "#BBD2E8"), .bg = bg, .add_modifier = .{ .bold = row.bold, .italic = row.italic, .underlined = row.underline } };
+
+            var col = list_x;
+            if (row.marker) |mark| {
+                if (col < x0 + w) {
+                    buf.setString(col, row_y, mark, .{ .fg = accent, .bg = bg, .add_modifier = .{ .bold = true } });
+                    col += @intCast(@min(mark.len, inner_w));
+                }
+            } else {
+                col += 2;
+            }
+
+            const text = row.text orelse "";
+            if (col < x0 + w and text.len > 0) {
+                const avail = (x0 + w - 1) -% col;
+                const paint = if (text.len > avail) text[0..avail] else text;
+                buf.setString(col, row_y, paint, row_style);
+            }
         }
     }
 
@@ -649,4 +724,42 @@ fn utf8Length(lead: u8) usize {
     if ((lead & 0xf0) == 0xe0) return 3;
     if ((lead & 0xf8) == 0xf0) return 4;
     return 1;
+}
+
+/// Returns a terminal color for a palette border/indicator. Accepts "#RRGGBB",
+/// a 0-255 ANSI index (as string), or a color name.
+fn parseColor(str: []const u8) zui.Color {
+    const trimmed = std.mem.trim(u8, str, " \t");
+    if (trimmed.len == 7 and trimmed[0] == '#') {
+        var r: u8 = 0;
+        var g: u8 = 0;
+        var b: u8 = 0;
+        if (std.fmt.parseUnsigned(u8, trimmed[1..3], 16)) |v| {
+            r = v;
+        } else |_| {}
+        if (std.fmt.parseUnsigned(u8, trimmed[3..5], 16)) |v| {
+            g = v;
+        } else |_| {}
+        if (std.fmt.parseUnsigned(u8, trimmed[5..7], 16)) |v| {
+            b = v;
+        } else |_| {}
+        return .{ .RGB = .{ .r = r, .g = g, .b = b } };
+    }
+    if (std.fmt.parseUnsigned(u8, trimmed, 10)) |idx| {
+        return .{ .ANSI = idx };
+    } else |_| {}
+    return .White;
+}
+
+/// Background color for the palette overlay.
+fn ansiBg(str: []const u8) zui.Color {
+    return parseColor(str);
+}
+
+/// Color helper used to resolve the border/indicator color of a Pop.
+fn borderColor(color: ?[]const u8) zui.Color {
+    if (color) |c| {
+        if (c.len > 0) return parseColor(c);
+    }
+    return .White;
 }

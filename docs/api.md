@@ -207,6 +207,38 @@ dot.ui.pum.hide()
 
 The menu grows *upward* from `y`. `icon_color` accepts a color as usual.
 
+#### `palette`
+
+A full-screen-ish command palette that replaces the native command line. When
+opened it captures every keystroke (via the `CmdOpen` hook) until closed.
+
+```lua
+local pal = dot.ui.palette.open({
+  title   = "COMMAND PALETTE",
+  rows    = { "dashboard", "wq", "q" },   -- initial rows
+  on_enter = function(selected, text) end, -- optional custom action
+  on_input = function(input) end,          -- optional, called per keystroke
+})
+dot.ui.palette.close()                    -- close programmatically
+dot.ui.palette.active()                   -- is a palette open?
+```
+
+- Typing filters the rows; `Up`/`Down` move the highlight (`▶`), `Enter` selects,
+  `Escape` cancels and returns to Normal mode.
+- `Tab` / `Shift-Tab` autocomplete:
+  - `cmd <arg>` input → the last token is completed as a **path** (directories
+    via `dot.fs.read_dir`, `open`/`source`/`write`/… all work). A single match is
+    inserted immediately; several matches cycle on each `Tab` (`Shift-Tab` cycles
+    back) and a `[n/m]` counter is shown next to the input. Directories keep their
+    trailing `/` so `Tab` can descend into them.
+  - bare command input → the command name is completed against `dot.cmd.list()`.
+- Without `on_enter`, the default action runs the selected entry as a command:
+  first through `dot.cmd.execute`, falling back to the native command engine.
+- `rows` entries may also be tables `{ text, fg, bg, bold, italic, underline,
+  marker, marker_fg }` for fully styled rows.
+- The palette is drawn by the popup engine: centered bordered modal, `background`
+  fill, `accent` border/indicator color.
+
 #### `win`
 
 ```lua
@@ -306,6 +338,7 @@ dot.edit.insert("const std = @import(\"std\");\n")
 | `cmd.set_input(text)` | replaces the command-line text |
 | `cmd.create(name, fn)` | registers a user command |
 | `cmd.list()` | all command names (built-in + user) |
+| `cmd.execute(name, args?)` | runs a registered user command; returns `true` if found, `false` to fall through |
 | `cmd.history` | list of previously entered commands |
 
 ```lua
@@ -315,6 +348,9 @@ end)
 
 dot.cmd.set_input("hello dot")
 local what = dot.cmd.input()
+
+-- Run a registered command programmatically (e.g. from a palette/callback).
+local handled = dot.cmd.execute("hello", "dot")
 ```
 
 `cmd.create` callbacks receive the argument string (possibly `""`). The callback
@@ -471,6 +507,7 @@ is_readonly }`), `actions` (recent action names as strings).
 | `BufOpen` | a file is opened from disk |
 | `BufWritePre` | before saving (return `true` to cancel) |
 | `ModeChanged` | the editor mode changed |
+| `CmdOpen` | command line opened (press `:`) — used to open the palette |
 | `CmdEnter` | the command line is submitted |
 | `CmdTab` / `CmdSTab` | Tab / Shift-Tab in the command line |
 | `CmdBackspace` | backspace in the command line |

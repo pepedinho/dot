@@ -440,4 +440,360 @@ function M.project3d(x, y, z, fov, view_dist, cx, cy)
 	return math.floor(x * factor + cx), math.floor(y * factor + cy)
 end
 
+-- ============================================================
+--  COMMAND PALETTE
+-- ============================================================
+
+---@class dot.ui.palette_opts
+---@field title? string Title shown at the top of the palette.
+---@field rows string[] Rows to display (first is highlighted).
+---@field background? string Background color.
+---@field accent? string Accent color for the indicator/title.
+---@field on_enter? fun(selected: integer, text: string) Called when Enter is pressed.
+---@field on_input? fun(input: string) Called whenever the palette input changes.
+
+---@class dot.ui.Palette
+---@field id integer
+local Palette = {}
+Palette.__index = Palette
+
+---Opens a full-screen command palette that replaces the native command line.
+---Keystrokes are routed to this palette until it is closed.
+---@param opts dot.ui.palette_opts
+---@return dot.ui.Palette
+function M.open_palette(opts)
+	opts = opts or {}
+	local win = M.win.size()
+	local palette = setmetatable({
+		id = nil,
+		opts = opts,
+		rows = opts.rows or {},
+		rows_max = opts.rows or {},
+		selected = 1,
+		offset = 0,
+		input = "",
+		is_open = false,
+		completion = nil,
+	}, Palette)
+
+	palette:open(win)
+	return palette
+end
+
+function Palette:_rows_for_width(lines, width)
+	local res = {}
+	for _, line in ipairs(lines) do
+		if #line > width then
+			res[#res + 1] = line
+		else
+			res[#res + 1] = line
+		end
+	end
+	return res
+end
+
+function Palette:_build_rows()
+	local win = M.win.size()
+	local title = self.opts.title or "COMMAND"
+	local rows = {}
+
+	table.insert(rows, { text = title .. "  ", fg = self.opts.accent or "#88C0D0", bold = true })
+	if #self.input > 0 or (self.completion and self.completion.matches) then
+		local suffix = ""
+		if self.completion and self.completion.matches then
+			suffix = "  [" .. self.completion.index .. "/" .. #self.completion.matches .. "]"
+		end
+		table.insert(rows, { text = "› " .. self.input .. suffix, fg = "#ECEFF4", bold = true })
+	end
+	table.insert(rows, { text = "" })
+
+	local avail = math.max(win[1] - #rows - 2, 1)
+	local shown = {}
+	for i = 1 + self.offset, math.min(1 + self.offset + avail, #self.rows) do
+		table.insert(shown, i)
+	end
+
+	for _, idx in ipairs(shown) do
+		local item
+		if idx == self.selected then
+			item = {
+				text = self.rows[idx],
+				fg = "#F8F8F2",
+				marker = "▶",
+				marker_fg = self.opts.accent or "#88C0D0",
+				bold = true,
+			}
+		else
+			item = {
+				text = self.rows[idx],
+				fg = "#9BA7B8",
+				marker_fg = self.opts.accent or "#88C0D0",
+			}
+		end
+		table.insert(rows, item)
+	end
+	return rows
+end
+
+function Palette:open(win)
+	local c = win or M.win.size()
+	self:filter()
+	local cols, rows = c[2], c[1]
+
+	local width = math.min(math.floor(cols * 0.6), 60)
+	width = math.max(width, 24)
+	local list_rows = self:_build_rows()
+	local height = math.min(#list_rows + 2, rows - 2)
+	height = math.max(height, 5)
+
+	local pos_x = math.floor((cols - width) / 2) + 1
+	local pos_y = math.max(math.floor((rows - height) / 2), 1)
+
+	local popup = M.popup({
+		pos = { pos_x, pos_y },
+		size = { width, height },
+		border = true,
+		background = self.opts.background or "#1E232E",
+		border_color = self.opts.accent or "#88C0D0",
+		indicator = "»",
+		rows = list_rows,
+	})
+	self.is_open = true
+	self.id = popup.id
+	_dot.palette_activate()
+	_dot.palette_on_key = function(key)
+		return self:key(key)
+	end
+	self:refresh()
+	return self
+end
+
+function Palette:refresh()
+	if not self.id then
+		return
+	end
+	_dot.popup_set_screen(self.id, self:_build_rows(), {
+		border = true,
+		indicator = self.opts.accent or "#88C0D0",
+	})
+	_dot.needs_redraw = true
+end
+
+function Palette:filter()
+	local input = self.input:lower()
+	if input == "" then
+		self.rows = {}
+		for _, name in ipairs(_dot.get_native_cmds() or {}) do
+			self.rows[#self.rows + 1] = name
+		end
+		table.sort(self.rows)
+		self.selected = 1
+		self.offset = 0
+		return
+	end
+	local filtered = {}
+	for _, name in ipairs(dot.cmd.list()) do
+		if name:lower():sub(1, #input) == input or name:lower():find(input, 1, true) then
+			filtered[#filtered + 1] = name
+		end
+	end
+	-- Command + argument form (e.g. `open src/main.c`): no command name can
+	-- match, so surface the full input as a runnable row.
+	if #filtered == 0 and self.input:match("^%S+%s+%S") then
+		filtered[#filtered + 1] = self.input
+	end
+	self.rows = filtered
+	self.selected = 1
+	self.offset = 0
+end
+
+function Palette:complete(dir)
+	local input = self.input
+	local cmd, rest = input:match("^(%S+)%s+(.*)$")
+	local matches = {}
+	local base = ""
+
+	if cmd then
+		-- Command with an argument: complete the last token as a path.
+		local current_dir = rest:match("^(.*[/\\])") or ""
+		local prefix = rest:sub(#current_dir + 1)
+		local files = dot.fs.read_dir(current_dir)
+		for _, name in ipairs(files or {}) do
+			if name:sub(1, #prefix) == prefix then
+				matches[#matches + 1] = name
+			end
+		end
+		table.sort(matches)
+		base = cmd .. " "
+		-- Track the token being completed so repeated Tab cycles within it.
+		local token = cmd .. "|" .. current_dir
+		if self.completion and self.completion.token == token and
+			self.completion.matches then
+			local i = (self.completion.index + dir - 1) % #self.completion.matches + 1
+			local new_input = base .. current_dir .. self.completion.matches[i]
+			_dot.palette_set_input(new_input)
+			self.input = _dot.get_palette_input()
+			self.completion.index = i
+			self:filter()
+			self:refresh()
+			return
+		end
+		if #matches == 1 then
+			_dot.palette_set_input(base .. current_dir .. matches[1])
+			self.input = _dot.get_palette_input()
+			self.completion = nil
+			self:filter()
+			self:refresh()
+			return
+		end
+		self.completion = { matches = matches, index = 1, token = token }
+		if #matches > 0 then
+			_dot.palette_set_input(base .. current_dir .. matches[1])
+			self.input = _dot.get_palette_input()
+			self:filter()
+			self:refresh()
+		end
+		return
+	end
+
+	-- Command name completion.
+	local all = dot.cmd.list()
+	for _, name in ipairs(all or {}) do
+		if name:sub(1, #input) == input then
+			matches[#matches + 1] = name
+		end
+	end
+	if #matches == 1 then
+		_dot.palette_set_input(matches[1])
+		self.input = _dot.get_palette_input()
+		self.completion = nil
+		self:filter()
+		self:refresh()
+		return
+	end
+	if self.completion and self.completion.token == "cmd|" .. input and
+		self.completion.matches then
+		local i = (self.completion.index + dir - 1) % #self.completion.matches + 1
+		_dot.palette_set_input(self.completion.matches[i])
+		self.input = _dot.get_palette_input()
+		self.completion.index = i
+		self:filter()
+		self:refresh()
+		return
+	end
+	if #matches > 1 then
+		self.completion = { matches = matches, index = 1, token = "cmd|" .. input }
+		_dot.palette_set_input(matches[1])
+		self.input = _dot.get_palette_input()
+		self:filter()
+		self:refresh()
+	end
+end
+
+function Palette:key(k)
+	if k == "escape" then
+		self:close()
+		_dot.set_cmdline("")
+		_dot.set_mode("n")
+		return
+	end
+	if k == "up" then
+		self:move(-1)
+		return
+	end
+	if k == "down" then
+		self:move(1)
+		return
+	end
+	if k == "tab" then
+		self:complete(1)
+		return
+	end
+	if k == "shifttab" then
+		self:complete(-1)
+		return
+	end
+	if k == "backspace" then
+		self.completion = nil
+		_dot.palette_backspace()
+		self.input = _dot.get_palette_input()
+		self:filter()
+		self:refresh()
+		return
+	end
+	if k == "enter" then
+		self:enter()
+		return
+	end
+	-- Printable character: forward to palette input.
+	self.completion = nil
+	_dot.palette_type(k)
+	self.input = _dot.get_palette_input()
+	if self.opts.on_input then
+		self.opts.on_input(self.input)
+	end
+	self:filter()
+	self:refresh()
+end
+
+function Palette:move(dir)
+	if #self.rows == 0 then
+		return
+	end
+	self.selected = (self.selected - 1 + dir + #self.rows) % #self.rows + 1
+	self:refresh()
+end
+
+function Palette:enter()
+	local chosen = self.rows[self.selected]
+	local input = self.input
+	close_palette(self)
+	if self.opts.on_enter then
+		self.opts.on_enter(self.selected, chosen or input)
+		return
+	end
+	if chosen and chosen ~= "" then
+		local name, args = chosen:match("^(%S+)%s*(.*)$")
+		local handled = dot.cmd.execute(name or chosen, args or "")
+		if handled then
+			_dot.set_cmdline("")
+			_dot.set_mode("n")
+		else
+			_dot.set_cmdline(chosen)
+			_dot.execute_command()
+		end
+	end
+end
+
+function Palette:close()
+	close_palette(self)
+end
+
+local _active_palette = nil
+
+function close_palette(palette)
+	if _active_palette == palette then
+		_active_palette = nil
+	end
+	if palette.id then
+		_dot.popup_close(palette.id)
+	end
+	palette.id = nil
+	palette.is_open = false
+	_dot.palette_on_key = nil
+	_dot.palette_deactivate()
+	_dot.needs_redraw = true
+end
+
+M.palette = {
+	open = function(opts)
+		_active_palette = M.open_palette(opts)
+		return _active_palette
+	end,
+	close = close_palette,
+	active = function()
+		return _active_palette ~= nil
+	end,
+}
+
 return M

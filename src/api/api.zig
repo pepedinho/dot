@@ -4,6 +4,7 @@ const style = @import("../view/style.zig");
 const job = @import("../core/worker.zig");
 const utils = @import("../utils.zig");
 const gap = @import("../core/gap.zig");
+const pop = @import("../view/pop.zig");
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -134,8 +135,17 @@ pub fn init(editor: *core.Editor) !*c.lua_State {
     registerFn(L, "buf_save", api_buf_save);
     registerFn(L, "popup", api_popup);
     registerFn(L, "popup_set_text", api_popup_set_text);
+    registerFn(L, "popup_set_screen", api_popup_set_screen);
     registerFn(L, "popup_close", api_popup_close);
     registerFn(L, "server_stop", api_server_stop);
+    registerFn(L, "set_interval_ms", api_set_interval_ms);
+    registerFn(L, "palette_activate", api_palette_activate);
+    registerFn(L, "palette_deactivate", api_palette_deactivate);
+    registerFn(L, "palette_type", api_palette_type);
+    registerFn(L, "palette_set_input", api_palette_set_input);
+    registerFn(L, "palette_backspace", api_palette_backspace);
+    registerFn(L, "get_palette_input", api_get_palette_input);
+    registerFn(L, "execute_command", api_execute_command);
 
     // The public API surface (`dot.*`) is assembled in Lua from these
     // primitives by `runtime/lua/dot/init.lua`.
@@ -759,7 +769,7 @@ export fn api_server_send(L: ?*c.lua_State) c_int {
 
 export fn api_get_mode(L: ?*c.lua_State) c_int {
     const editor = global_editor orelse return 0;
-    const mode_name = @tagName(editor.mode);
+    const mode_name = if (editor.palette_active) "cmdline" else @tagName(editor.mode);
     _ = c.lua_pushlstring(L, mode_name, mode_name.len);
     return 1;
 }
@@ -1256,6 +1266,27 @@ export fn api_set_interval(L: ?*c.lua_State) c_int {
     return 0;
 }
 
+/// Like `set_interval` but returns the effective interval in milliseconds
+/// (useful to implement `timer.after`).
+export fn api_set_interval_ms(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const interval_ms = @as(i64, @intCast(c.luaL_checkinteger(L, 1)));
+    if (interval_ms <= 0) {
+        return c.luaL_error(L, "interval_ms must be > 0");
+    }
+    c.luaL_checktype(L, 2, c.LUA_TFUNCTION);
+
+    const ref_id = c.luaL_ref(L, c.LUA_REGISTRYINDEX);
+    editor.scheduler.add(.{ .LuaCallback = ref_id }, interval_ms) catch {
+        c.luaL_unref(L, c.LUA_REGISTRYINDEX, ref_id);
+        return 0;
+    };
+
+    c.lua_pushinteger(L, @intCast(interval_ms));
+    return 1;
+}
+
 // ============================================================
 //  OBJECT-ORIENTED PRIMITIVES (backing the dot.* Lua facade)
 // ============================================================
@@ -1366,6 +1397,11 @@ export fn api_popup(L: ?*c.lua_State) c_int {
     var size: ?utils.Pos = null;
     var duration: ?i64 = null;
     var text: []const u8 = "";
+    var indicator: ?[]const u8 = null;
+    var border = true;
+    var pop_bg: ?[]const u8 = null;
+    var border_color: ?[]const u8 = null;
+    var rows: ?struct { dupe: std.ArrayList(pop.PopRow), alloc: std.mem.Allocator } = null;
 
     c.luaL_checktype(L, 1, c.LUA_TTABLE);
     c.lua_pushvalue(L, 1);
@@ -1412,6 +1448,74 @@ export fn api_popup(L: ?*c.lua_State) c_int {
     }
     c.lua_pop(L, 1);
 
+    _ = c.lua_getfield(L, -1, "indicator");
+    if (c.lua_isstring(L, -1) != 0) {
+        var ind_len: usize = 0;
+        const ind_ptr = c.lua_tolstring(L, -1, &ind_len);
+        indicator = editor.allocator.dupe(u8, ind_ptr[0..ind_len]) catch null;
+    }
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, -1, "border");
+    border = c.lua_toboolean(L, -1) != 0;
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, -1, "background");
+    if (c.lua_isstring(L, -1) != 0) {
+        var bg_len: usize = 0;
+        const bg_ptr = c.lua_tolstring(L, -1, &bg_len);
+        pop_bg = editor.allocator.dupe(u8, bg_ptr[0..bg_len]) catch null;
+    }
+    c.lua_pop(L, 1);
+
+    _ = c.lua_getfield(L, -1, "border_color");
+    if (c.lua_isstring(L, -1) != 0) {
+        var bc_len: usize = 0;
+        const bc_ptr = c.lua_tolstring(L, -1, &bc_len);
+        border_color = editor.allocator.dupe(u8, bc_ptr[0..bc_len]) catch null;
+    }
+    c.lua_pop(L, 1);
+
+    // Optional `rows` array of {text,fg,bg,bold,italic,underline,marker,marker_fg}.
+    _ = c.lua_getfield(L, -1, "rows");
+    if (c.lua_istable(L, -1)) {
+        const nrows = c.lua_rawlen(L, -1);
+        if (nrows > 0) {
+            var list = std.ArrayList(pop.PopRow).empty;
+            for (0..nrows) |i| {
+                _ = c.lua_rawgeti(L, -1, @intCast(i + 1));
+                if (c.lua_istable(L, -1)) {
+                    var row = pop.PopRow{};
+                    _ = c.lua_getfield(L, -1, "text");
+                    if (c.lua_isstring(L, -1) != 0) {
+                        var l: usize = 0;
+                        const p = c.lua_tolstring(L, -1, &l);
+                        row.text = (editor.allocator.dupe(u8, p[0..l]) catch null);
+                    }
+                    c.lua_pop(L, 1);
+                    inline for (.{ "fg", "bg", "marker", "marker_fg" }) |field| {
+                        _ = c.lua_getfield(L, -1, field);
+                        if (c.lua_isstring(L, -1) != 0) {
+                            var l: usize = 0;
+                            const p = c.lua_tolstring(L, -1, &l);
+                            @field(row, field) = (editor.allocator.dupe(u8, p[0..l]) catch null);
+                        }
+                        c.lua_pop(L, 1);
+                    }
+                    inline for (.{ "bold", "italic", "underline" }) |field| {
+                        _ = c.lua_getfield(L, -1, field);
+                        @field(row, field) = c.lua_toboolean(L, -1) != 0;
+                        c.lua_pop(L, 1);
+                    }
+                    list.append(editor.allocator, row) catch {};
+                }
+                c.lua_pop(L, 1);
+            }
+            rows = .{ .dupe = list, .alloc = editor.allocator };
+        }
+    }
+    c.lua_pop(L, 1);
+
     c.lua_pop(L, 1); // pop the options table
 
     const win = editor.win;
@@ -1422,6 +1526,14 @@ export fn api_popup(L: ?*c.lua_State) c_int {
     if (editor.pop_store.getPtr(pop_id)) |p| {
         p.clear();
         p.write(text) catch {};
+        if (indicator) |ind| p.indicator = (editor.allocator.dupe(u8, ind) catch null);
+        p.border = border;
+        p.border_color = if (border_color) |bc| (editor.allocator.dupe(u8, bc) catch null) else null;
+        p.pop_bg = if (pop_bg) |bg| (editor.allocator.dupe(u8, bg) catch null) else null;
+        if (rows) |r| {
+            p.rows = r.dupe;
+            p.centered = false;
+        }
     }
 
     editor.needs_redraw = true;
@@ -1439,6 +1551,94 @@ export fn api_popup_set_text(L: ?*c.lua_State) c_int {
     if (editor.pop_store.getPtr(id)) |p| {
         p.clear();
         p.write(std.mem.span(text_ptr)) catch {};
+    }
+
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+/// Positions, resizes and reconfigures an existing pop (used to build a full-screen
+/// palette). Arg 1 = id, arg 2 = rows table, arg 3 = opts table.
+export fn api_popup_set_screen(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+
+    const id = @as(u32, @intCast(c.luaL_checkinteger(L, 1)));
+    const p = editor.pop_store.getPtr(id) orelse return 0;
+
+    c.luaL_checktype(L, 2, c.LUA_TTABLE);
+
+    // Clear previous rows.
+    p.rows.clearRetainingCapacity();
+
+    const nrows = c.lua_rawlen(L, 2);
+    for (0..nrows) |i| {
+        _ = c.lua_rawgeti(L, 2, @intCast(i + 1));
+        if (c.lua_istable(L, -1)) {
+            var row = pop.PopRow{};
+            _ = c.lua_getfield(L, -1, "text");
+            if (c.lua_isstring(L, -1) != 0) {
+                var l: usize = 0;
+                const s = c.lua_tolstring(L, -1, &l);
+                row.text = (editor.allocator.dupe(u8, s[0..l]) catch null);
+            }
+            c.lua_pop(L, 1);
+            inline for (.{ "fg", "bg", "marker", "marker_fg" }) |field| {
+                _ = c.lua_getfield(L, -1, field);
+                if (c.lua_isstring(L, -1) != 0) {
+                    var l: usize = 0;
+                    const s = c.lua_tolstring(L, -1, &l);
+                    @field(row, field) = (editor.allocator.dupe(u8, s[0..l]) catch null);
+                }
+                c.lua_pop(L, 1);
+            }
+            inline for (.{ "bold", "italic", "underline" }) |field| {
+                _ = c.lua_getfield(L, -1, field);
+                @field(row, field) = c.lua_toboolean(L, -1) != 0;
+                c.lua_pop(L, 1);
+            }
+            p.rows.append(editor.allocator, row) catch {};
+        }
+        c.lua_pop(L, 1);
+    }
+
+    if (c.lua_gettop(L) >= 3 and c.lua_istable(L, 3)) {
+        _ = c.lua_getfield(L, 3, "pos");
+        if (c.lua_istable(L, -1)) {
+            var x: usize = 0;
+            var y: usize = 0;
+            _ = c.lua_rawgeti(L, -1, 1);
+            x = @intCast(c.luaL_optinteger(L, -1, 0));
+            c.lua_pop(L, 1);
+            _ = c.lua_rawgeti(L, -1, 2);
+            y = @intCast(c.luaL_optinteger(L, -1, 0));
+            c.lua_pop(L, 1);
+            p.pos = .{ .x = x, .y = y };
+        }
+        c.lua_pop(L, 1);
+        _ = c.lua_getfield(L, 3, "size");
+        if (c.lua_istable(L, -1)) {
+            var w: usize = 0;
+            var h: usize = 0;
+            _ = c.lua_rawgeti(L, -1, 1);
+            w = @intCast(c.luaL_optinteger(L, -1, 0));
+            c.lua_pop(L, 1);
+            _ = c.lua_rawgeti(L, -1, 2);
+            h = @intCast(c.luaL_optinteger(L, -1, 0));
+            c.lua_pop(L, 1);
+            p.size = .{ .x = w, .y = h };
+        }
+        c.lua_pop(L, 1);
+        _ = c.lua_getfield(L, 3, "border");
+        p.border = c.lua_toboolean(L, -1) != 0;
+        c.lua_pop(L, 1);
+        _ = c.lua_getfield(L, 3, "indicator");
+        if (c.lua_isstring(L, -1) != 0) {
+            var ind_len: usize = 0;
+            const ind_ptr = c.lua_tolstring(L, -1, &ind_len);
+            p.indicator = editor.allocator.dupe(u8, ind_ptr[0..ind_len]) catch null;
+        }
+        c.lua_pop(L, 1);
     }
 
     editor.needs_redraw = true;
@@ -1468,5 +1668,91 @@ export fn api_server_stop(L: ?*c.lua_State) c_int {
         if (child.stdin) |*in| in.close(editor.io);
         // The reader thread reaps the process on its next read failure.
     }
+    return 0;
+}
+
+/// Activates the palette: keystrokes in command mode route to `_dot.palette_on_key`
+/// and the native command prompt is hidden. Copies the current command-line into
+/// the palette input buffer.
+export fn api_palette_activate(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    editor.palette_active = true;
+    editor.palette_input.clearRetainingCapacity();
+    editor.palette_input.appendSlice(editor.allocator, editor.cmd_buf.items) catch {};
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+/// Deactivates the palette: restores normal command-line editing. The palette
+/// input is written back into the native command buffer.
+export fn api_palette_deactivate(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    editor.palette_active = false;
+    editor.cmd_buf.clearRetainingCapacity();
+    editor.cmd_buf.appendSlice(editor.allocator, editor.palette_input.items) catch {};
+    editor.palette_input.clearRetainingCapacity();
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+/// The palette writes a character into its own input buffer (visible via
+/// `_dot.get_palette_input`).
+export fn api_palette_type(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const ch = c.luaL_checklstring(L, 1, null);
+    editor.palette_input.appendSlice(editor.allocator, std.mem.span(ch)) catch {};
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+/// Replaces the palette input text entirely (used by Tab completion).
+export fn api_palette_set_input(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    const str_ptr = c.luaL_checklstring(L, 1, null);
+    const text = std.mem.span(str_ptr);
+    editor.palette_input.clearRetainingCapacity();
+    editor.palette_input.appendSlice(editor.allocator, text) catch {};
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+/// Backspaces the last character of the palette input.
+export fn api_palette_backspace(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    if (editor.palette_input.items.len > 0) {
+        var len = editor.palette_input.items.len;
+        while (len > 0 and (editor.palette_input.items[len - 1] & 0xC0) == 0x80) {
+            len -= 1;
+        }
+        if (len > 0) len -= 1;
+        editor.palette_input.shrinkRetainingCapacity(len);
+    }
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
+    return 0;
+}
+
+/// Returns the palette's current input text.
+export fn api_get_palette_input(L: ?*c.lua_State) c_int {
+    const editor = global_editor orelse return 0;
+    _ = c.lua_pushlstring(L, editor.palette_input.items.ptr, editor.palette_input.items.len);
+    return 1;
+}
+
+/// Executes the current command-line as the native command (used by the palette
+/// to run the selected command after it fills the command buffer).
+export fn api_execute_command(L: ?*c.lua_State) c_int {
+    _ = L;
+    const editor = global_editor orelse return 0;
+    editor.executeCmd() catch {};
+    editor.needs_redraw = true;
+    editor.is_dirty = true;
     return 0;
 }

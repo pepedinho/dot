@@ -102,6 +102,11 @@ pub const Editor = struct {
     win: Window,
     /// Store the command line input
     cmd_buf: std.ArrayListUnmanaged(u8),
+    /// When true, a Lua palette is intercepting the command line
+    /// (rendering replaces the native command bar and keystrokes route to Lua).
+    palette_active: bool = false,
+    palette_pop_id: u32 = 0,
+    palette_input: std.ArrayListUnmanaged(u8),
     /// This is used to store `Pop`
     /// Is map to store multiple active Pops by their unique ID.
     /// With different lifetime and attributs
@@ -162,6 +167,9 @@ pub const Editor = struct {
             .needs_redraw = true,
             .win = try Window.init(),
             .cmd_buf = .empty,
+            .palette_active = false,
+            .palette_pop_id = 0,
+            .palette_input = .empty,
             .pop_store = std.AutoHashMap(u32, pop.Pop).init(allocator),
             .key_binds = binds,
             .pending_keys = .empty,
@@ -377,6 +385,9 @@ pub const Editor = struct {
 
                 self.mode = m;
                 _ = self.triggerHook("ModeChanged");
+                if (m == .Command and !self.palette_active) {
+                    _ = self.triggerHook("CmdOpen");
+                }
                 self.needs_redraw = true;
             },
             .Quit => self.quit(),
@@ -601,7 +612,7 @@ pub const Editor = struct {
 
     /// Parse `self.cmd_buf` call cmd_map handler if it exist
     /// clean `cmd_buf` and switch `self.mode` to `self.last_mode`
-    fn executeCmd(self: *Editor) !void {
+    pub fn executeCmd(self: *Editor) !void {
         defer {
             self.mode = self.last_mode;
             self.cmd_buf.clearRetainingCapacity();
@@ -842,7 +853,9 @@ pub const Editor = struct {
                         }
                     },
                     .Command, .Search => {
-                        switch (key) {
+                        if (self.palette_active) {
+                            self.emitPaletteKey(key);
+                        } else switch (key) {
                             .escape => {
                                 if (!self.triggerHook("CmdEsc")) {
                                     try self.pushAction(.{ .SetMode = .Normal });
@@ -1003,6 +1016,56 @@ pub const Editor = struct {
             }
         }
         return prevent_default;
+    }
+
+    /// Routes a key to the active Lua palette via the `_dot.palette_on_key`
+    /// primitive. The palette decides how to handle it (navigation, typing,
+    /// validating, closing).
+    fn emitPaletteKey(self: *Editor, key: keyboard.Key) void {
+        const L = self.vm orelse return;
+
+        _ = api.c.lua_getglobal(L, "_dot");
+        _ = api.c.lua_getfield(L, -1, "palette_on_key");
+        if (!api.c.lua_isfunction(L, -1)) {
+            api.c.lua_pop(L, 2);
+            return;
+        }
+
+        const name: []const u8 = switch (key) {
+            .ascii => |ch| switch (ch) {
+                0x09 => "tab", // Tab completes / cycles
+                0x0d, 0x0a => "enter", // Enter validates the selection / executes
+                0x7f, 0x08 => "backspace",
+                0x1b => "escape",
+                else => "",
+            },
+            .up => "up",
+            .down => "down",
+            .shift_tab => "shifttab",
+            .enter => "enter",
+            .escape => "escape",
+            .backspace => "backspace",
+            else => "",
+        };
+
+        if (!std.mem.eql(u8, name, "")) {
+            _ = api.c.lua_pushlstring(L, name.ptr, name.len);
+        } else {
+            // Plain printable character: forward it as input to the palette.
+            const ch: u8 = switch (key) {
+                .ascii => |code| code,
+                else => return,
+            };
+            if (ch < 32) return;
+            _ = api.c.lua_pushlstring(L, &[_]u8{ch}, 1);
+        }
+
+        if (api.c.lua_pcallk(L, 1, 0, 0, 0, null) != 0) {
+            const err_msg = std.mem.span(api.c.lua_tolstring(L, -1, null));
+            self.toast_manager.push(err_msg, 5000, .{ .fg = .White, .bg = .Red }) catch {};
+            api.c.lua_pop(L, 1);
+        }
+        api.c.lua_pop(L, 1); // the `_dot` table
     }
 
     fn bootstrapConfig(self: *Editor) !void {

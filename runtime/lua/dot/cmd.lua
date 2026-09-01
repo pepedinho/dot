@@ -46,6 +46,26 @@ function M.set_input(text)
 	_dot.set_cmdline(tostring(text))
 end
 
+---Executes a registered Lua command by name. Returns `true` if the command was
+---found and run, `false` otherwise (so native commands can fall through).
+---@param name string
+---@param args? string
+---@return boolean handled
+function M.execute(name, args)
+	if type(name) ~= "string" then
+		return false
+	end
+	local cb = registry[name]
+	if not cb then
+		return false
+	end
+	local ok, err = pcall(cb, args or "")
+	if not ok then
+		_dot.print("dot.cmd: " .. name .. ": " .. tostring(err), { fg = "#FFFFFF", bg = "#BF616A" })
+	end
+	return true
+end
+
 -- Dispatch: built-in commands fall through to the native commands, `registry`
 -- commands are executed as Lua callbacks.
 _dot.hook_on("CmdEnter", function()
@@ -61,10 +81,7 @@ _dot.hook_on("CmdEnter", function()
 	end
 
 	if registry[cmd_name] then
-		local ok, err = pcall(registry[cmd_name], args or "")
-		if not ok then
-			_dot.print("dot.cmd: " .. cmd_name .. ": " .. tostring(err), { fg = "#FFFFFF", bg = "#BF616A" })
-		end
+		M.execute(cmd_name, args or "")
 		_dot.set_cmdline("")
 		_dot.set_mode("n")
 		return true
